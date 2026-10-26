@@ -1,0 +1,14 @@
+{
+  "tasks": {
+    "dev": "deno run --allow-all src/main.ts",
+    "check": "deno check src/main.ts",
+    "compile": "deno compile --allow-all --output ~/bin/recipe-saver src/main.ts"
+  },
+  "imports": {
+    "@anthropic-ai/sdk": "npm:@anthropic-ai/sdk@^1",
+    "zod": "npm:zod@^4",
+    "yaml": "npm:yaml@^2",
+    "@std/path": "jsr:@std/path@^1",
+    "@std/encoding": "jsr:@std/encoding@^1"
+  }
+}

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>local.recipe-saver</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/tylerpaige/bin/recipe-saver</string>
+    <string>run</string>
+  </array>
+  <!-- Fast path: run when the Shortcut drops a file in the inbox. -->
+  <key>WatchPaths</key>
+  <array>
+    <string>/Users/tylerpaige/Library/Mobile Documents/iCloud~is~workflow~my~workflows/Documents/recipe-inbox</string>
+  </array>
+  <!-- Safety net for missed events (iCloud sync timing, sleep). Empty inbox exits immediately. -->
+  <key>StartInterval</key>
+  <integer>900</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <!-- Efficiency cores, throttled disk I/O. -->
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>Nice</key>
+  <integer>10</integer>
+  <!-- Don't re-trigger more often than every 30s while iCloud is churning. -->
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/tylerpaige/Library/Application Support/recipe-saver/launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/tylerpaige/Library/Application Support/recipe-saver/launchd.log</string>
+</dict>
+</plist>

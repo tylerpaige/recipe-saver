@@ -1,0 +1,89 @@
+import { join } from "@std/path";
+import { bin, limits, paths } from "./config.ts";
+
+interface State {
+  processed: Record<string, { file: string | null; status: string; at: string }>;
+  attempts: Record<string, number>;
+  lastNotified: Record<string, string>; // failure kind -> ISO time
+}
+
+const stateFile = () => join(paths.state, "state.json");
+
+export async function loadState(): Promise<State> {
+  try {
+    return JSON.parse(await Deno.readTextFile(stateFile()));
+  } catch {
+    return { processed: {}, attempts: {}, lastNotified: {} };
+  }
+}
+
+export async function saveState(state: State): Promise<void> {
+  await Deno.mkdir(paths.state, { recursive: true });
+  const tmp = `${stateFile()}.tmp`;
+  await Deno.writeTextFile(tmp, JSON.stringify(state, null, 2));
+  await Deno.rename(tmp, stateFile());
+}
+
+export async function log(message: string): Promise<void> {
+  await Deno.mkdir(paths.state, { recursive: true });
+  const line = `${new Date().toISOString()} ${message}\n`;
+  await Deno.writeTextFile(join(paths.state, "recipe-saver.log"), line, { append: true });
+  console.error(message);
+}
+
+/** Saves raw inputs/outputs for one item, for debugging. Pruned after 30 days. */
+export async function saveDebug(id: string, name: string, data: unknown): Promise<void> {
+  const dir = join(paths.state, "debug", id);
+  await Deno.mkdir(dir, { recursive: true });
+  const body = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+  await Deno.writeTextFile(join(dir, name), body);
+}
+
+export async function pruneDebug(): Promise<void> {
+  const root = join(paths.state, "debug");
+  const cutoff = Date.now() - limits.debugRetentionDays * 86_400_000;
+  try {
+    for await (const e of Deno.readDir(root)) {
+      const p = join(root, e.name);
+      const { mtime } = await Deno.stat(p);
+      if (mtime && mtime.getTime() < cutoff) await Deno.remove(p, { recursive: true });
+    }
+  } catch { /* nothing to prune */ }
+}
+
+/** macOS notification, at most once per failure kind per day. */
+export async function notifyOnce(state: State, kind: string, message: string): Promise<void> {
+  const last = state.lastNotified[kind];
+  if (last && Date.now() - Date.parse(last) < 86_400_000) return;
+  state.lastNotified[kind] = new Date().toISOString();
+  const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  await new Deno.Command(bin.osascript, {
+    args: ["-e", `display notification "${esc(message)}" with title "Recipe Saver"`],
+    stdout: "null",
+    stderr: "null",
+  }).output();
+}
+
+/** Single-instance lock so WatchPaths and the interval timer never overlap. */
+export async function acquireLock(): Promise<boolean> {
+  await Deno.mkdir(paths.state, { recursive: true });
+  const lock = join(paths.state, "run.lock");
+  try {
+    await Deno.writeTextFile(lock, String(Deno.pid), { createNew: true });
+    return true;
+  } catch {
+    // Stale if the holder is gone (crash) or it's been an hour.
+    const pid = Number(await Deno.readTextFile(lock).catch(() => "0"));
+    const { mtime } = await Deno.stat(lock);
+    const alive = pid > 0 && (await new Deno.Command("/bin/kill", { args: ["-0", String(pid)], stderr: "null" }).output()).success;
+    if (!alive || (mtime && Date.now() - mtime.getTime() > 3_600_000)) {
+      await Deno.remove(lock).catch(() => {});
+      return acquireLock();
+    }
+    return false;
+  }
+}
+
+export async function releaseLock(): Promise<void> {
+  await Deno.remove(join(paths.state, "run.lock")).catch(() => {});
+}
