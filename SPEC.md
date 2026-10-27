@@ -29,7 +29,7 @@ Path: `iCloud Drive/iA Writer/Recipes/<slug>.md`. Plain CommonMark + YAML frontm
 ```markdown
 ---
 title: Crispy Gochujang Tofu
-id: C9xYz123abc             # reel ID, or url-<hash> for a recipe page; used by `status` and `log`
+id: 3f9a1c0b7e42           # hash of the URL minus tracking params; used by `status` and `log`
 source: https://www.instagram.com/reel/C9xYz123abc/
 recipe_url: https://somecook.com/gochujang-tofu   # only if found
 saved: 2026-10-26

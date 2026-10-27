@@ -4,6 +4,7 @@ import { CookieJar } from "./cookies.ts";
 import { ItemError, SystemicError, TransientError } from "./errors.ts";
 import { extract, type Recipe, searchRecipeUrl, type Signals } from "./extract.ts";
 import { fetchInfo, instagramId } from "./fetch.ts";
+import { itemId } from "./ids.ts";
 import { downloadVideo, extractFrames, transcribe } from "./media.ts";
 import { readRecipes } from "./library.ts";
 import { candidateUrls, fetchRecipePage } from "./recipepage.ts";
@@ -26,8 +27,7 @@ function emptyRecipe(reason: string): Recipe {
 const RANK = { "needs-source": 0, partial: 1, complete: 2 } as const;
 
 /** Tiers 1–3 for an Instagram post. Returns null for non-recipes. */
-async function instagramRecipe(url: string, cookiesFile: string): Promise<RenderInput | null> {
-  const id = instagramId(url)!;
+async function instagramRecipe(url: string, id: string, cookiesFile: string): Promise<RenderInput | null> {
   const info = await fetchInfo(url, cookiesFile);
   await saveDebug(id, "info.json", info.raw);
   const signals: Signals = { creator: info.creator, caption: info.caption };
@@ -129,13 +129,6 @@ async function pageRecipe(url: string, id: string): Promise<RenderInput> {
   return { recipe, id, url, creator: null, recipeUrl: page.url, extractedFrom: ["recipe-page"] };
 }
 
-async function itemId(url: string): Promise<string> {
-  const ig = instagramId(url);
-  if (ig) return ig;
-  const hash = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(url));
-  return "url-" + [...new Uint8Array(hash)].slice(0, 6).map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
 /** Processes one URL end to end. Throws SystemicError / TransientError for retryable failures. */
 async function processUrl(url: string, cookies: () => Promise<string>, state: State, opts: { stdout?: boolean } = {}) {
   const id = await itemId(url);
@@ -146,7 +139,7 @@ async function processUrl(url: string, cookies: () => Promise<string>, state: St
 
   let input: RenderInput | null;
   try {
-    input = instagramId(url) ? await instagramRecipe(url, await cookies()) : await pageRecipe(url, id);
+    input = instagramId(url) ? await instagramRecipe(url, id, await cookies()) : await pageRecipe(url, id);
   } catch (e) {
     if (!(e instanceof ItemError)) throw e;
     // This post can't be fetched at all; leave a placeholder you can finish by hand.
