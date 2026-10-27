@@ -2,7 +2,6 @@ import { join } from "@std/path";
 import { parse } from "yaml";
 import { paths } from "./config.ts";
 import { hashtag } from "./render.ts";
-import { loadState } from "./state.ts";
 
 export interface SavedRecipe {
   file: string;
@@ -11,7 +10,6 @@ export interface SavedRecipe {
   saved: string;
   tags: string[];
   status: string;
-  savedAt: string; // when the saver wrote it, for ordering same-day recipes
 }
 
 const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---/;
@@ -23,9 +21,8 @@ function hashtags(text: string): string[] {
   return [...new Set([...text.matchAll(HASHTAG_RE)].map((m) => hashtag(m[1])).filter(Boolean))];
 }
 
-/** Every recipe in the Recipes folder, newest first. */
+/** Every recipe in the Recipes folder, newest first. This folder is the record of what's been saved. */
 export async function readRecipes(): Promise<SavedRecipe[]> {
-  const { processed } = await loadState();
   const out: SavedRecipe[] = [];
   try {
     for await (const e of Deno.readDir(paths.recipes)) {
@@ -40,20 +37,23 @@ export async function readRecipes(): Promise<SavedRecipe[]> {
         fm = parse(match?.[1] ?? "") ?? {};
       } catch { /* hand-edited frontmatter that no longer parses; list it by filename */ }
       const mtime = (await Deno.stat(file)).mtime ?? new Date(0);
-      const id = String(fm.id ?? "");
       out.push({
         file,
-        id,
+        id: String(fm.id ?? ""),
         title: String(fm.title ?? e.name.replace(/\.md$/, "")),
         saved: String(fm.saved ?? mtime.toISOString().slice(0, 10)),
         tags: hashtags(text),
         status: String(fm.status ?? ""),
-        // File mtime changes on every hand edit, so prefer the saver's own record.
-        savedAt: processed[id]?.at ?? mtime.toISOString(),
       });
     }
   } catch (e) {
     if (!(e instanceof Deno.errors.NotFound)) throw e;
   }
-  return out.sort((a, b) => b.saved.localeCompare(a.saved) || b.savedAt.localeCompare(a.savedAt));
+  // `saved` is "YYYY-MM-DD HH:MM", so it sorts as text.
+  return out.sort((a, b) => b.saved.localeCompare(a.saved) || a.title.localeCompare(b.title));
+}
+
+/** The saved recipe with this id, wherever it is and whatever it's called now. */
+export async function findRecipe(id: string): Promise<SavedRecipe | undefined> {
+  return (await readRecipes()).find((r) => r.id === id);
 }

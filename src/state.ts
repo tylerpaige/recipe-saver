@@ -1,9 +1,11 @@
 import { join } from "@std/path";
 import { bin, limits, paths } from "./config.ts";
 
+// Only what the recipe files can't tell us. Whether a recipe is saved is answered by the Recipes folder
+// (each file's `id`), so deleting a file is all it takes to have a re-shared post processed again.
 interface State {
-  processed: Record<string, { file: string | null; status: string; at: string }>;
-  attempts: Record<string, number>;
+  notRecipes: Record<string, string>; // id -> ISO time it was checked and found not to be a recipe
+  attempts: Record<string, number>; // id -> failed attempts so far
   lastNotified: Record<string, string>; // failure kind -> ISO time
   current?: { id: string; since: string }; // item being processed right now
   lastError?: { id: string; kind: string; message: string; at: string }; // cleared by the next success
@@ -16,10 +18,11 @@ export const logFile = () => join(paths.state, "recipe-saver.log");
 const stateFile = () => join(paths.state, "state.json");
 
 export async function loadState(): Promise<State> {
+  const empty: State = { notRecipes: {}, attempts: {}, lastNotified: {} };
   try {
-    return JSON.parse(await Deno.readTextFile(stateFile()));
+    return { ...empty, ...JSON.parse(await Deno.readTextFile(stateFile())) };
   } catch {
-    return { processed: {}, attempts: {}, lastNotified: {} };
+    return empty;
   }
 }
 

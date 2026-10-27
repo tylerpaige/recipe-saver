@@ -13,10 +13,11 @@ export interface RenderInput {
   extractedFrom: Source[];
 }
 
-function today(): string {
+/** Local "YYYY-MM-DD HH:MM": readable, and sorts correctly as text. */
+function savedStamp(): string {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 export function renderMarkdown(r: RenderInput): string {
@@ -29,7 +30,7 @@ export function renderMarkdown(r: RenderInput): string {
     id: r.id,
     source: r.url,
     recipe_url: r.recipeUrl,
-    saved: today(),
+    saved: savedStamp(),
     servings: recipe.servings ?? undefined,
     prep_time: recipe.prep_time ?? undefined,
     cook_time: recipe.cook_time ?? undefined,

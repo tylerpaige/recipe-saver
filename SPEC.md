@@ -5,14 +5,14 @@ Archive recipes from Instagram Reels (and carousels, and plain recipe URLs) as p
 ## Intake
 
 - iPhone Share Sheet Shortcut: silent, one tap, "Saved ✓" notification.
-- Writes one file per item to `iCloud Drive/Shortcuts/recipe-inbox/<id>.txt` containing the shared URL. Filename is the reel/post ID when derivable (dedupes double-shares), else a timestamp.
+- Writes one file per item to `iCloud Drive/Shortcuts/recipe-inbox/<timestamp>.txt` containing the shared URL. The filename doesn't matter; double-shares are caught at processing time by ID.
 - Backlog: one-time `import-export` command reads the Instagram data export (saved collections JSON), filters to the recipe collection (~90 items), and writes them into the inbox.
 
 ## Trigger
 
 - launchd agent with `WatchPaths` on the inbox (fast path) + `StartInterval` 900s (safety net for missed/asleep events).
 - `ProcessType=Background`, `LowPriorityIO=true`. No resident process; an empty inbox exits immediately.
-- Idempotent: drains the inbox, skips already-processed IDs, self-throttles to ≤ ~4 fetches/minute.
+- Idempotent: drains the inbox, skips IDs already in the Recipes folder or recorded as not-a-recipe, self-throttles to ≤ ~4 fetches/minute (skips aren't throttled).
 - Ignore iCloud placeholder files (`.icloud`) until downloaded.
 
 ## Pipeline (tiered; stop as soon as the recipe is complete)
@@ -32,7 +32,7 @@ title: Crispy Gochujang Tofu
 id: 3f9a1c0b7e42           # hash of the URL minus tracking params; used by `status` and `log`
 source: https://www.instagram.com/reel/C9xYz123abc/
 recipe_url: https://somecook.com/gochujang-tofu   # only if found
-saved: 2026-10-26
+saved: 2026-10-26 18:42      # local time
 servings: 2
 prep_time: 10 min
 cook_time: 20 min
@@ -68,13 +68,14 @@ Rules:
 - A post about making a dish is a recipe even when the recipe text lives elsewhere ("comment RECIPE"); only non-cooking posts are skipped.
 - Notes keep creator tips (storage, substitutions, why a step matters); no restating title/tags/times, no promotional chatter.
 - Quantities kept as written. Add a conversion to the other system (metric ↔ US) in parentheses only for specific standard units. Teaspoons and tablespoons are never converted. Same-dimension conversions exact; weight↔volume only for common pantry staples, marked `~`. Never convert casual amounts ("a glug", "a handful") or container units ("can", "packet").
-- **Write-once.** The script never modifies an existing recipe file. Filename collisions get `-2`, `-3`, …
+- **The Recipes folder is the record of what's saved.** A file's `id` marks that URL as done, wherever the file is and whatever it's called. Delete the file and re-share the URL to have it processed again.
+- **Recipe files are living documents.** You edit them in iA Writer, and when the format changes, existing files are updated to match (front-matter only; the body and your edits are kept). Saving never overwrites an existing file: filename collisions get `-2`, `-3`, …
 
 ## Operations
 
 - **Cookies:** Waterfox profile (`~/Library/Application Support/Waterfox/Profiles/*.default-release`). Copy `cookies.sqlite` + `-wal` to a temp dir, export instagram.com cookies only to a temp Netscape `cookies.txt`, pass via `--cookies`, delete after. No Full Disk Access needed.
 - **API key:** macOS Keychain, service `recipe-saver`, read via `security find-generic-password`.
-- **State:** `~/Library/Application Support/recipe-saver/` — processed IDs, debug data (raw info JSON, transcripts, extraction JSON), logs. Pruned after 30 days.
+- **State:** `~/Library/Application Support/recipe-saver/`. `state.json` holds only what the recipe files can't: IDs found not to be recipes, retry counts, the last error, the item in progress. Also debug data (raw info JSON, transcripts, extraction JSON; pruned after 30 days) and the log.
 - **Failures:**
   - Per-reel incomplete → `needs-source` file.
   - Transient (network) → silent retry, up to 3 attempts.

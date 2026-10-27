@@ -7,20 +7,20 @@ Share an Instagram reel (or a recipe page) from your iPhone and a plain-text rec
 ```
 iPhone                         iCloud Drive                         Mac
 ──────                         ────────────                         ───
-Share → "Save Recipe"  ──▶  Shortcuts/recipe-inbox/<id>.txt  ──▶  launchd starts `recipe-saver run`
+Share → "Save Recipe"  ──▶  Shortcuts/recipe-inbox/<time>.txt ──▶  launchd starts `recipe-saver run`
                                                                      │  fetch the post, extract the recipe
                             iA Writer/Recipes/<slug>.md  ◀────────────┘  write Markdown, delete the inbox file
 ```
 
-1. **Queue.** The Shortcut drops a one-line text file holding the shared URL into `iCloud Drive/Shortcuts/recipe-inbox/`. Nothing else happens on the phone. Sharing the same reel twice just overwrites the same file.
+1. **Queue.** The Shortcut drops a one-line text file holding the shared URL into `iCloud Drive/Shortcuts/recipe-inbox/`. Nothing else happens on the phone.
 2. **Wake up.** A launchd agent on the Mac watches that folder and starts `~/bin/recipe-saver run` when a file lands, plus every 15 minutes as a safety net (for missed events, or a Mac that was asleep). There's no process running in between. Files still downloading from iCloud are left until they arrive.
-3. **Process**, oldest first, one at a time, 15 seconds apart so Instagram isn't hammered. A lock file stops two runs overlapping. Each item goes through up to three tiers, stopping as soon as the recipe is complete:
+3. **Process**, oldest first, one at a time, 15 seconds between fetches so Instagram isn't hammered. Anything already in the Recipes folder (matched by `id`), or already found not to be a recipe, is skipped without fetching. A lock file stops two runs overlapping. Each item goes through up to three tiers, stopping as soon as the recipe is complete:
    1. **Caption.** `yt-dlp` fetches the post's caption and creator (using your Waterfox Instagram login). Claude Haiku turns it into a structured recipe and decides whether the post is a recipe at all; if not, it's skipped.
    2. **Recipe page.** If the caption is missing quantities or steps, it follows a link in the caption, or has Claude search the web for the creator's own write-up (blog, Substack), and reads the recipe from that page. A recipe URL shared directly from Safari starts here.
    3. **Video.** Still incomplete: it downloads the video, transcribes the audio locally with whisper.cpp, and sends ~10 frames to Claude to read on-screen text (for carousels, the slide images). The media is deleted afterwards.
 
    Whatever's found is written even if it's incomplete, marked `partial` (cookable, but something's missing) or `needs-source` (not cookable).
-4. **Write.** The recipe becomes a Markdown file in `iCloud Drive/iA Writer/Recipes/`, named after the title. Existing files are never overwritten; a clash gets a `-2` suffix. The inbox file is deleted, and the item's ID is recorded so it's never processed twice. (Use `recipe-saver status <url>` to look one up by link.)
+4. **Write.** The recipe becomes a Markdown file in `iCloud Drive/iA Writer/Recipes/`, named after the title. Existing files are never overwritten; a clash gets a `-2` suffix. The inbox file is deleted. The file's `id` is the record that it's done: there's no separate list of saved recipes. (Use `recipe-saver status <url>` to look one up by link.)
 
 ### Recipe files
 
@@ -30,7 +30,7 @@ title: Brothy Chickpeas & Rice
 id: a9fbcf7b89a5
 source: https://www.instagram.com/reel/De7QgD3Iy9z/
 recipe_url: https://madeleinesmeals.substack.com/p/brothy-chickpeas-and-rice
-saved: 2026-10-26
+saved: 2026-10-26 15:54
 servings: "2"
 tags: #vegetarian #comfort_food #chickpea
 status: complete
@@ -52,7 +52,9 @@ extracted_from: [caption, recipe-page]
 - **`status`** is `complete`, `partial` or `needs-source`; anything but `complete` also gets a `status_reason`.
 - **`extracted_from`** says which tiers contributed.
 
-You can edit recipes freely in iA Writer; the saver never touches a file after writing it.
+- **`saved`** is local date and time; `list` sorts by it.
+
+Edit recipes freely in iA Writer: rename them, move them around the Recipes folder, add tags. Keep the `id` line, or the saver will treat a re-share of that post as new. When the format changes, existing files are updated to match (front-matter only; your edits are kept).
 
 ### Failures
 
@@ -66,7 +68,7 @@ You can edit recipes freely in iA Writer; the saver never touches a file after w
 |---|---|
 | Recipes | `~/Library/Mobile Documents/27N4MQEA55~pro~writer/Documents/Recipes/` (iCloud Drive › iA Writer › Recipes) |
 | Queue | `~/Library/Mobile Documents/iCloud~is~workflow~my~workflows/Documents/recipe-inbox/` (iCloud Drive › Shortcuts › recipe-inbox) |
-| Log, saved-ID record (`state.json`), debug data | `~/Library/Application Support/recipe-saver/` |
+| Log, `state.json` (not-a-recipe IDs, retry counts, last error), debug data | `~/Library/Application Support/recipe-saver/` |
 | API key | Keychain, service `recipe-saver` |
 | Program | `~/bin/recipe-saver`, built from `src/` by `deno task compile` |
 
@@ -80,15 +82,14 @@ In the Shortcuts app, create a new shortcut named **Save Recipe**:
 2. Set *Receive …* to: **If there's no input: Stop and Respond**.
 3. Add **Get URLs from Input** (input: *Shortcut Input*).
 4. Add **Get Item from List** → *First Item* of *URLs*.
-5. Add **Match Text**: pattern `(?:reels?|p|tv)/([A-Za-z0-9_-]+)` in *Item from List*.
-6. Add **Get Group from Matched Text** → *Group At Index* `1`.
-7. Add **If** *Text from Group* **has any value**:
-   - **Text**: *Text from Group* → set variable `Name`
-   - **Otherwise**: **Format Date** (*Current Date*, custom format `yyyyMMdd-HHmmss`) → set variable `Name`
-   - **End If**
-8. Add **Text** containing just the *Item from List* (the URL).
-9. Add **Save File**: save *Text* to **Shortcuts**, turn **off** *Ask Where to Save*, set *Subpath* to `recipe-inbox/Name.txt` (insert the `Name` variable), turn **on** *Overwrite If File Exists*.
-10. Add **Show Notification**: `Saved ✓`.
+5. Add **Format Date**: *Current Date*, *Date Format* **Custom**, format `yyyyMMdd-HHmmss`.
+6. Add **Text** containing just the *Item from List* (the URL).
+7. Add **Save File**: save *Text* to **Shortcuts**, turn **off** *Ask Where to Save*, set *Subpath* to `recipe-inbox/Formatted Date.txt` (insert the *Formatted Date* variable), turn **on** *Overwrite If File Exists*.
+8. Add **Show Notification**: `Saved ✓`.
+
+Sharing the same post twice is fine: the second one is skipped on the Mac.
+
+**Already set up the older version** (with *Match Text* / *If* steps)? It still works. To simplify it, delete the *Match Text*, *Get Group from Matched Text* and *If … Otherwise … End If* steps, add **Format Date** as above, and change the *Save File* subpath to `recipe-inbox/Formatted Date.txt`.
 
 To use it in Instagram, tap **Share → Share to…** on a reel (or **Copy link**, then share the link from Safari/Notes), then choose **Save Recipe**. For a recipe blog, share the page from Safari.
 
@@ -142,5 +143,5 @@ After changing code: `deno task compile` (launchd runs `~/bin/recipe-saver`).
 - **Is it working?** `recipe-saver status`, then `recipe-saver log --tail` or `recipe-saver log <id>`.
 - **Log file**: `~/Library/Application Support/recipe-saver/recipe-saver.log`
 - **What Claude saw for one reel**: `~/Library/Application Support/recipe-saver/debug/<id>/` (kept 30 days)
-- **Re-process a reel**: delete its entry from `state.json` in the same folder, then `add` it again. The script never overwrites an existing recipe file; you'll get a `-2` copy.
+- **Re-process a recipe**: delete its file from the Recipes folder, then share it again (or `recipe-saver add <url>`). For a post that was found not to be a recipe, remove its ID from `notRecipes` in `state.json` first.
 - **Stop it**: `launchctl bootout gui/$(id -u)/local.recipe-saver`
