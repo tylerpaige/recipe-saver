@@ -1,6 +1,6 @@
 # Recipe Saver
 
-Share an Instagram reel (or a recipe page) from your iPhone and a plain-text recipe appears in `iCloud Drive/Recipes/`. See [SPEC.md](SPEC.md) for the design.
+Share an Instagram reel (or a recipe page) from your iPhone and a plain-text recipe appears in `iCloud Drive/iA Writer/Recipes/`. See [SPEC.md](SPEC.md) for the design.
 
 ## iPhone Shortcut
 
@@ -26,18 +26,21 @@ The Shortcut writes into `iCloud Drive/Shortcuts/recipe-inbox/`. The Mac picks i
 
 ## Mac setup
 
-Already done on this Mac:
-
 ```sh
 brew install yt-dlp ffmpeg whisper-cpp
+
 # whisper model (~490 MB)
 curl -L -o ~/Library/Application\ Support/recipe-saver/models/ggml-small.en.bin \
   https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin
+
 # Anthropic API key in Keychain
 security add-generic-password -s recipe-saver -a anthropic -w
+
 # build + launchd agent
 deno task compile
+
 cp launchd/local.recipe-saver.plist ~/Library/LaunchAgents/
+
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.recipe-saver.plist
 ```
 
@@ -48,6 +51,15 @@ Stay logged into Instagram in **Waterfox**; that's where the cookies come from.
 ```sh
 deno task dev preview <url>   # run the full pipeline, print Markdown, save nothing
 ~/bin/recipe-saver add <url>  # queue a URL (same as the Shortcut)
+~/bin/recipe-saver queue      # show what's queued, oldest first
+~/bin/recipe-saver list       # saved recipes, newest first, 10 per page (--page 2 for more)
+~/bin/recipe-saver list mushroom weeknight  # only recipes tagged with all of these
+~/bin/recipe-saver list "comfort food"      # quote a multi-word tag (matches #comfort_food)
+~/bin/recipe-saver status     # idle_no_queue | waiting_to_start | processing | error
+~/bin/recipe-saver status <id>              # one recipe: waiting_to_start | processing | error | saved | not_recipe | not_found
+~/bin/recipe-saver log --tail 50            # last 50 log lines (bare --tail: 20)
+~/bin/recipe-saver log <id>                 # everything logged about one recipe
+~/bin/recipe-saver clean                    # clear the logs
 ~/bin/recipe-saver run        # drain the inbox now (launchd does this automatically)
 ```
 

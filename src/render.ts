@@ -26,33 +26,30 @@ export function renderMarkdown(r: RenderInput): string {
   // Field order matches SPEC.md; missing fields are omitted, never guessed.
   const fm: Record<string, unknown> = {
     title,
-    creator: r.creator ?? undefined,
+    id: r.id,
     source: r.url,
     recipe_url: r.recipeUrl,
-    reel_id: r.id,
     saved: today(),
     servings: recipe.servings ?? undefined,
     prep_time: recipe.prep_time ?? undefined,
     cook_time: recipe.cook_time ?? undefined,
     total_time: recipe.total_time ?? undefined,
-    tags: recipe.tags.length ? recipe.tags : undefined,
     status: recipe.status,
     status_reason: recipe.status === "complete" ? undefined : recipe.reason ?? undefined,
     extracted_from: r.extractedFrom,
   };
   for (const k of Object.keys(fm)) if (fm[k] === undefined) delete fm[k];
   const doc = new Document(fm);
-  // Short lists on one line, like the spec: tags: [a, b]
-  for (const key of ["tags", "extracted_from"]) {
-    const node = doc.get(key, true);
-    if (isSeq(node)) node.flow = true;
-  }
-  const yaml = doc.toString({ flowCollectionPadding: false, lineWidth: 0 });
+  // Short list on one line, like the spec: extracted_from: [a, b]
+  const node = doc.get("extracted_from", true);
+  if (isSeq(node)) node.flow = true;
+  let yaml = doc.toString({ flowCollectionPadding: false, lineWidth: 0 });
+  // Tags as space-separated #hashtags so iA Writer picks them up. Not valid YAML (it reads as a
+  // comment), which is fine: nothing needs to parse them as YAML.
+  const tags = [...new Set(recipe.tags.map(hashtag).filter(Boolean))];
+  if (tags.length) yaml = yaml.replace(/^status:/m, `tags: ${tags.map((t) => `#${t}`).join(" ")}\nstatus:`);
 
   const out: string[] = [`---\n${yaml}---`, "", `# ${title}`, ""];
-  const by = r.creator ? `From ${r.creator} · ` : "";
-  const label = r.id.startsWith("url-") ? "Original recipe" : "Original post";
-  out.push(`*${by}[${label}](${r.url})*`, "");
 
   if (recipe.ingredients.length) {
     out.push("## Ingredients", "");
@@ -77,6 +74,12 @@ export function renderMarkdown(r: RenderInput): string {
     out.push("");
   }
   return out.join("\n").replace(/\n{3,}/g, "\n\n");
+}
+
+/** "Comfort Food" / "comfort-food" -> "comfort_food", a tag iA Writer recognizes. */
+export function hashtag(s: string): string {
+  return s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase()
+    .replace(/^#+/, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
 }
 
 function slugify(s: string): string {

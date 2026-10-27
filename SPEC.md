@@ -24,28 +24,25 @@ Archive recipes from Instagram Reels (and carousels, and plain recipe URLs) as p
 
 ## Output
 
-Path: `iCloud Drive/Recipes/<slug>.md`. Plain CommonMark + YAML frontmatter. No images.
+Path: `iCloud Drive/iA Writer/Recipes/<slug>.md`. Plain CommonMark + YAML frontmatter. No images.
 
 ```markdown
 ---
 title: Crispy Gochujang Tofu
-creator: "@somecook"
+id: C9xYz123abc             # reel ID, or url-<hash> for a recipe page; used by `status` and `log`
 source: https://www.instagram.com/reel/C9xYz123abc/
 recipe_url: https://somecook.com/gochujang-tofu   # only if found
-reel_id: C9xYz123abc
 saved: 2026-10-26
 servings: 2
 prep_time: 10 min
 cook_time: 20 min
-tags: [korean, tofu, vegetarian, weeknight]
+tags: #korean #tofu #vegetarian #weeknight
 status: complete            # complete | partial | needs-source
 status_reason: ...          # only when not complete
 extracted_from: [caption]   # caption | recipe-page | transcript | frames
 ---
 
 # Crispy Gochujang Tofu
-
-*From @somecook · [Original post](https://www.instagram.com/reel/C9xYz123abc/)*
 
 ## Ingredients
 
@@ -66,6 +63,7 @@ extracted_from: [caption]   # caption | recipe-page | transcript | frames
 
 Rules:
 - Fields not found are omitted, never guessed.
+- Tags are space-separated iA Writer hashtags on the frontmatter `tags:` line: lowercase, words joined with `_` (`#comfort_food`). YAML reads that line as a comment; that's accepted.
 - `partial` = cookable but part of the recipe is missing (quantities, a step); missing servings/times don't count. `needs-source` = not cookable.
 - A post about making a dish is a recipe even when the recipe text lives elsewhere ("comment RECIPE"); only non-cooking posts are skipped.
 - Notes keep creator tips (storage, substitutions, why a step matters); no restating title/tags/times, no promotional chatter.

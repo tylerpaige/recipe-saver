@@ -4,9 +4,9 @@ const HOME = Deno.env.get("HOME")!;
 const ICLOUD = join(HOME, "Library/Mobile Documents");
 
 export const paths = {
-  // iCloud Drive/Recipes — the folder you read in iA Writer.
+  // iCloud Drive/iA Writer/Recipes — shows up in iA Writer's library on iPhone.
   recipes: Deno.env.get("RECIPE_SAVER_OUTPUT") ??
-    join(ICLOUD, "com~apple~CloudDocs/Recipes"),
+    join(ICLOUD, "27N4MQEA55~pro~writer/Documents/Recipes"),
   // iCloud Drive/Shortcuts/recipe-inbox — the Share Sheet Shortcut writes here.
   inbox: Deno.env.get("RECIPE_SAVER_INBOX") ??
     join(ICLOUD, "iCloud~is~workflow~my~workflows/Documents/recipe-inbox"),
@@ -24,6 +24,7 @@ export const limits = {
   maxItemsPerRun: 20,
   maxTransientAttempts: 3,
   debugRetentionDays: 30,
+  recipesPerPage: 10,
 };
 
 // Homebrew binaries; launchd doesn't inherit your shell PATH.
@@ -35,4 +36,5 @@ export const bin = {
   sqlite3: "/usr/bin/sqlite3",
   osascript: "/usr/bin/osascript",
   security: "/usr/bin/security",
+  launchctl: "/bin/launchctl",
 };

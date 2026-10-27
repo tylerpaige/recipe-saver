@@ -5,7 +5,13 @@ interface State {
   processed: Record<string, { file: string | null; status: string; at: string }>;
   attempts: Record<string, number>;
   lastNotified: Record<string, string>; // failure kind -> ISO time
+  current?: { id: string; since: string }; // item being processed right now
+  lastError?: { id: string; kind: string; message: string; at: string }; // cleared by the next success
 }
+
+export type { State };
+
+export const logFile = () => join(paths.state, "recipe-saver.log");
 
 const stateFile = () => join(paths.state, "state.json");
 
@@ -27,7 +33,7 @@ export async function saveState(state: State): Promise<void> {
 export async function log(message: string): Promise<void> {
   await Deno.mkdir(paths.state, { recursive: true });
   const line = `${new Date().toISOString()} ${message}\n`;
-  await Deno.writeTextFile(join(paths.state, "recipe-saver.log"), line, { append: true });
+  await Deno.writeTextFile(logFile(), line, { append: true });
   console.error(message);
 }
 
@@ -64,6 +70,16 @@ export async function notifyOnce(state: State, kind: string, message: string): P
   }).output();
 }
 
+/** True while a live `run` holds the lock. Stale if the holder is gone (crash) or it's been an hour. */
+export async function runInProgress(): Promise<boolean> {
+  const lock = join(paths.state, "run.lock");
+  const pid = Number(await Deno.readTextFile(lock).catch(() => "0"));
+  if (!pid) return false;
+  const mtime = (await Deno.stat(lock).catch(() => null))?.mtime;
+  if (mtime && Date.now() - mtime.getTime() > 3_600_000) return false;
+  return (await new Deno.Command("/bin/kill", { args: ["-0", String(pid)], stderr: "null" }).output()).success;
+}
+
 /** Single-instance lock so WatchPaths and the interval timer never overlap. */
 export async function acquireLock(): Promise<boolean> {
   await Deno.mkdir(paths.state, { recursive: true });
@@ -72,15 +88,9 @@ export async function acquireLock(): Promise<boolean> {
     await Deno.writeTextFile(lock, String(Deno.pid), { createNew: true });
     return true;
   } catch {
-    // Stale if the holder is gone (crash) or it's been an hour.
-    const pid = Number(await Deno.readTextFile(lock).catch(() => "0"));
-    const { mtime } = await Deno.stat(lock);
-    const alive = pid > 0 && (await new Deno.Command("/bin/kill", { args: ["-0", String(pid)], stderr: "null" }).output()).success;
-    if (!alive || (mtime && Date.now() - mtime.getTime() > 3_600_000)) {
-      await Deno.remove(lock).catch(() => {});
-      return acquireLock();
-    }
-    return false;
+    if (await runInProgress()) return false;
+    await Deno.remove(lock).catch(() => {});
+    return acquireLock();
   }
 }
 
