@@ -1,5 +1,5 @@
 import { limits } from "./config.ts";
-import { add, clean, list, queue, showLog, status } from "./commands.ts";
+import { add, clean, list, open, queue, showLog, status } from "./commands.ts";
 import { preview, run } from "./run.ts";
 
 /** Splits args into positionals and `--name value` / `--name=value` / bare `--name` flags. */
@@ -26,7 +26,10 @@ const { rest, flags } = parseArgs(Deno.args.slice(1));
 const usage = `usage: recipe-saver <command>
   run                          drain the queue now
   queue                        show what's queued
-  list [tag ...] [--page N]    saved recipes, newest first, ${limits.recipesPerPage} per page
+  list [tag ...]               pick a saved recipe to open (newest first)
+  list [tag ...] --plain [--page N]
+                               print saved recipes, ${limits.recipesPerPage} per page (the default when piped)
+  open <id | url>              open a saved recipe in iA Writer
   status [id | url]            app status, or one recipe's
   log [id] [--tail [N]]        the log; --tail shows the last N lines (default 20)
   clean                        clear the logs
@@ -36,7 +39,8 @@ const pageNo = positiveInt(flags.page, 1);
 const tail = flags.tail === undefined ? undefined : positiveInt(flags.tail, 20);
 if (cmd === "run") await run();
 else if (cmd === "queue") await queue();
-else if (cmd === "list" && pageNo) await list(rest, pageNo);
+else if (cmd === "list" && pageNo) await list(rest, pageNo, flags.plain === true || flags.page !== undefined);
+else if (cmd === "open" && rest.length === 1) await open(rest[0]);
 else if (cmd === "status" && rest.length <= 1) await status(rest[0]);
 else if (cmd === "log" && rest.length <= 1 && tail !== null) await showLog(rest[0], tail);
 else if (cmd === "clean" && !rest.length) await clean();

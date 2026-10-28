@@ -47,7 +47,7 @@ extracted_from: [caption, recipe-page]
 …
 ```
 
-- **`id`** is a short hash of the shared URL, after dropping tracking junk (`utm_…`, `igsh`, …) so the same post shared twice gets the same ID. The commands below (`status`, `log`) take it, and it's how the saver recognises a recipe even after you rename the file.
+- **`id`** is a short hash of the shared URL, after dropping tracking junk (`utm_…`, `igsh`, …) so the same post shared twice gets the same ID. The commands below (`status`, `log`, `open`) take it, and it's how the saver recognises a recipe even after you rename the file.
 - **`tags`** are iA Writer hashtags, so they show up in iA Writer's Hashtags list. Multi-word tags use `_` (`#comfort_food`). This line isn't valid YAML; that's deliberate. `list` reads hashtags from anywhere in the file, so tags you add by hand count too.
 - **`status`** is `complete`, `partial` or `needs-source`; anything but `complete` also gets a `status_reason`.
 - **`extracted_from`** says which tiers contributed.
@@ -123,9 +123,11 @@ Stay logged into Instagram in **Waterfox**; that's where the cookies come from.
 deno task dev preview <url>   # run the full pipeline, print Markdown, save nothing
 ~/bin/recipe-saver add <url>  # queue a URL (same as the Shortcut)
 ~/bin/recipe-saver queue      # show what's queued, oldest first
-~/bin/recipe-saver list       # saved recipes, newest first, 10 per page (--page 2 for more)
+~/bin/recipe-saver list       # pick a saved recipe (gum filter, newest first); Enter opens it in iA Writer
 ~/bin/recipe-saver list mushroom weeknight  # only recipes tagged with all of these
 ~/bin/recipe-saver list "comfort food"      # quote a multi-word tag (matches #comfort_food)
+~/bin/recipe-saver list --plain             # print instead, 10 per page (--page 2 for more); the default when piped
+~/bin/recipe-saver open <id>                # open a saved recipe in iA Writer (a shared URL works too)
 ~/bin/recipe-saver status     # idle_no_queue | waiting_to_start | processing | error
 ~/bin/recipe-saver status <id>              # one recipe: waiting_to_start | processing | error | saved | not_recipe | not_found
 ~/bin/recipe-saver log --tail 50            # last 50 log lines (bare --tail: 20)

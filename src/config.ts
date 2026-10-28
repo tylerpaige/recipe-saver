@@ -37,4 +37,8 @@ export const bin = {
   osascript: "/usr/bin/osascript",
   security: "/usr/bin/security",
   launchctl: "/bin/launchctl",
+  gum: "/opt/homebrew/bin/gum",
+  open: "/usr/bin/open",
 };
+
+export const EDITOR_APP = "iA Writer";
