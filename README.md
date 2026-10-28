@@ -12,7 +12,7 @@ Share → "Save Recipe"  ──▶  Shortcuts/recipe-inbox/<time>.txt ──▶ 
                             iA Writer/Recipes/<slug>.md  ◀────────────┘  write Markdown, delete the inbox file
 ```
 
-1. **Queue.** The Shortcut drops a one-line text file holding the shared URL into `iCloud Drive/Shortcuts/recipe-inbox/`. Nothing else happens on the phone.
+1. **Queue.** The Shortcut drops a one-line text file holding the shared URL into `iCloud Drive/Shortcuts/recipe-inbox/`. Nothing else happens on the phone. (`recipe-saver add` writes the same file, plus `tags: a, b` and `auto-tag: false` lines when you pass `--tag` / `--auto-tag=false`.)
 2. **Wake up.** A launchd agent on the Mac watches that folder and starts `~/bin/recipe-saver run` when a file lands, plus every 15 minutes as a safety net (for missed events, or a Mac that was asleep). There's no process running in between. Files still downloading from iCloud are left until they arrive.
 3. **Process**, oldest first, one at a time, 15 seconds between fetches so Instagram isn't hammered. Anything already in the Recipes folder (matched by `id`), or already found not to be a recipe, is skipped without fetching. A lock file stops two runs overlapping. Each item goes through up to three tiers, stopping as soon as the recipe is complete:
    1. **Caption.** `yt-dlp` fetches the post's caption and creator (using your Waterfox Instagram login). Claude Haiku turns it into a structured recipe and decides whether the post is a recipe at all; if not, it's skipped.
@@ -122,6 +122,8 @@ Stay logged into Instagram in **Waterfox**; that's where the cookies come from.
 ```sh
 deno task dev preview <url>   # run the full pipeline, print Markdown, save nothing
 ~/bin/recipe-saver add <url>  # queue a URL (same as the Shortcut)
+~/bin/recipe-saver add <url> --tag "dinner, comfort food"   # your tags, plus Claude's
+~/bin/recipe-saver add <url> --tag dinner --auto-tag=false  # only your tags
 ~/bin/recipe-saver queue      # show what's queued, oldest first
 ~/bin/recipe-saver list       # pick a saved recipe (gum filter, newest first); Enter opens it in iA Writer
 ~/bin/recipe-saver list mushroom weeknight  # only recipes tagged with all of these
