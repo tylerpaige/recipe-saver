@@ -51,7 +51,12 @@ Steps: imperative, one action-group per step, no numbering in the text. Keep ove
 
 Notes: only genuine tips from the creator that a cook would want: storage, substitutions, make-ahead, why a step matters. Never restate the title, tags, times, or diet ("plant-based recipe", "takes 20 minutes", "great for meal prep"). Drop promotion ("link in bio", "follow for more", "comment RECIPE"). An empty list is fine.
 
-Tags: 3-6 lowercase kebab-case tags covering cuisine, course, main ingredient, and diet where clear (e.g. "korean", "main", "tofu", "vegetarian", "weeknight").
+Tags: lowercase kebab-case, as many as genuinely describe the dish; there's no limit. Cover, where clear:
+- the main ingredient or ingredients, the things the dish is built around ("butternut-squash", "chickpeas", "tofu"), not every ingredient
+- cuisine, course and diet ("korean", "main", "vegetarian")
+- occasion and effort ("weeknight", "one-pot", "meal-prep")
+- mood ("comfort-food", "fresh", "cozy")
+- seasons, using only "spring", "summer", "autumn" and "winter" (never "fall"), Northern Hemisphere. Tag a season when the produce the dish is built around is at its best then (butternut squash, pumpkin: "autumn", "winter"; zucchini, tomatoes, corn: "summer"; asparagus, peas: "spring"), and also when the dish suits that season's weather (a hearty stew or warming soup: "winter"; a chilled noodle salad: "summer"). Skip seasons for dishes that fit any time of year.
 
 Status:
 - complete: ingredients with quantities and steps are all present. Missing servings or times do NOT make a recipe partial.
