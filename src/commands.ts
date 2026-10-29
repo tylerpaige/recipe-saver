@@ -2,17 +2,17 @@
 import { join } from "@std/path";
 import { bin, EDITOR_APP, limits, paths } from "./config.ts";
 import { itemId } from "./ids.ts";
-import { enqueue, inboxItems, pendingDownloads, type TagOptions, URL_RE } from "./inbox.ts";
+import { type AddOptions, enqueue, inboxItems, pendingDownloads, URL_RE } from "./inbox.ts";
 import { findRecipe, readRecipes, type SavedRecipe } from "./library.ts";
 import { hashtag } from "./render.ts";
 import { loadState, logFile, runInProgress } from "./state.ts";
 
-export async function add(url: string, opts: TagOptions) {
+export async function add(url: string, opts: AddOptions) {
   const id = await itemId(url);
   await enqueue(url, id, opts);
   const tags = opts.tags.map((t) => `#${hashtag(t)}`).join(" ");
   const tagging = opts.autoTag ? (tags ? `, tagged ${tags} plus Claude's tags` : "") : tags ? `, tagged ${tags} only` : ", without tags";
-  console.log(`Queued ${id}${tagging}`);
+  console.log(`Queued ${id}${tagging}${opts.message ? ", with your note" : ""}`);
   const saved = await findRecipe(id);
   if (saved) console.log(`It's already saved as ${saved.file}, so it will be skipped.`);
 }
@@ -41,6 +41,7 @@ export async function queue() {
     if (tries) notes.push(`${tries} failed attempt${tries === 1 ? "" : "s"}`);
     if (item.tags.length) notes.push(item.tags.map((t) => `#${hashtag(t)}`).join(" "));
     if (!item.autoTag) notes.push("no Claude tags");
+    if (item.message) notes.push("with a note");
     if (state.notRecipes[id] || await findRecipe(id)) notes.push("already done, will be skipped");
     const suffix = notes.length ? `  (${notes.join("; ")})` : "";
     console.log(`  ${id.padEnd(16)} ${ago(item.mtime).padStart(7)}  ${item.url}${suffix}`);

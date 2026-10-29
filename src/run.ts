@@ -3,7 +3,7 @@ import { limits, paths } from "./config.ts";
 import { CookieJar } from "./cookies.ts";
 import { SystemicError, TransientError } from "./errors.ts";
 import { itemId } from "./ids.ts";
-import { inboxItems, type TagOptions } from "./inbox.ts";
+import { type AddOptions, inboxItems } from "./inbox.ts";
 import { findRecipe } from "./library.ts";
 import { recipeFor } from "./pipeline.ts";
 import { renderMarkdown, writeRecipe } from "./render.ts";
@@ -15,7 +15,7 @@ import {
  * Processes and saves one URL, unless it's already saved or known not to be a recipe.
  * Returns whether anything was fetched. Throws on retryable failures.
  */
-async function saveUrl(url: string, opts: TagOptions, cookies: () => Promise<string>, state: State): Promise<boolean> {
+async function saveUrl(url: string, opts: AddOptions, cookies: () => Promise<string>, state: State): Promise<boolean> {
   const id = await itemId(url);
   if (state.notRecipes[id]) {
     await log(`${id}: already found not to be a recipe, skipping`);
@@ -34,6 +34,7 @@ async function saveUrl(url: string, opts: TagOptions, cookies: () => Promise<str
     return true;
   }
   input.recipe.tags = [...opts.tags, ...(opts.autoTag ? input.recipe.tags : [])];
+  input.message = opts.message;
   const file = await writeRecipe(paths.recipes, input.recipe.title ?? `Recipe ${id}`, renderMarkdown(input));
   await log(`${id}: saved ${file} (${input.recipe.status}; ${input.extractedFrom.join(", ") || "nothing"})`);
   return true;

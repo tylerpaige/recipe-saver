@@ -5,25 +5,28 @@ import { log } from "./state.ts";
 
 export const URL_RE = /https?:\/\/\S+/;
 
-/** Set by `recipe-saver add`; the Shortcut's files have neither, so Claude's tags are used alone. */
-export interface TagOptions {
+/** Set by `recipe-saver add`; the Shortcut's files have none of these, so Claude's tags are used alone. */
+export interface AddOptions {
   tags: string[]; // added to the recipe as well as (or, without autoTag, instead of) Claude's
   autoTag: boolean;
+  message?: string; // your note, shown under the recipe's title
 }
 
-export interface InboxItem extends TagOptions {
+export interface InboxItem extends AddOptions {
   path: string;
   url: string;
   mtime: number;
 }
 
-/** The URL, then optional "tags: a, b" and "auto-tag: false" lines. */
-function parseItem(text: string): (TagOptions & { url: string }) | undefined {
-  const url = text.match(URL_RE)?.[0];
+/** The URL, then optional "tags: a, b" and "auto-tag: false" lines, then optionally a blank line and a message. */
+function parseItem(text: string): (AddOptions & { url: string }) | undefined {
+  const [head, ...body] = text.split(/\n\s*\n/);
+  const url = head.match(URL_RE)?.[0];
   if (!url) return;
-  const tags = text.match(/^tags:(.*)$/m)?.[1].split(",").map((t) => t.trim()).filter(Boolean) ?? [];
-  const autoTag = text.match(/^auto-tag:\s*(\S+)/m)?.[1] !== "false";
-  return { url, tags, autoTag };
+  const tags = head.match(/^tags:(.*)$/m)?.[1].split(",").map((t) => t.trim()).filter(Boolean) ?? [];
+  const autoTag = head.match(/^auto-tag:\s*(\S+)/m)?.[1] !== "false";
+  const message = body.join("\n\n").trim() || undefined;
+  return { url, tags, autoTag, message };
 }
 
 /** Inbox files in processing order, oldest first. With `prune`, files without a URL are deleted. */
@@ -61,11 +64,12 @@ export async function pendingDownloads(): Promise<number> {
   return n;
 }
 
-/** Queues a URL the same way the Shortcut does, plus any tag options. */
-export async function enqueue(url: string, name: string, opts: TagOptions = { tags: [], autoTag: true }): Promise<void> {
+/** Queues a URL the same way the Shortcut does, plus any `add` options. */
+export async function enqueue(url: string, name: string, opts: AddOptions = { tags: [], autoTag: true }): Promise<void> {
   const lines = [url];
   if (opts.tags.length) lines.push(`tags: ${opts.tags.join(", ")}`);
   if (!opts.autoTag) lines.push("auto-tag: false");
+  if (opts.message) lines.push("", opts.message);
   await Deno.mkdir(paths.inbox, { recursive: true });
   await Deno.writeTextFile(join(paths.inbox, `${name}.txt`), lines.join("\n") + "\n");
 }

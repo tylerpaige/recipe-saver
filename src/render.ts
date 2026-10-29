@@ -11,6 +11,7 @@ export interface RenderInput {
   creator: string | null;
   recipeUrl?: string;
   extractedFrom: Source[];
+  message?: string; // your note from `add -m`
 }
 
 /** Local "YYYY-MM-DD HH:MM": readable, and sorts correctly as text. */
@@ -51,6 +52,7 @@ export function renderMarkdown(r: RenderInput): string {
   if (tags.length) yaml = yaml.replace(/^status:/m, `tags: ${tags.map((t) => `#${t}`).join(" ")}\nstatus:`);
 
   const out: string[] = [`---\n${yaml}---`, "", `# ${title}`, ""];
+  if (r.message) out.push(...r.message.split("\n").map((l) => l ? `> ${l}` : ">"), "");
 
   if (recipe.ingredients.length) {
     out.push("## Ingredients", "");

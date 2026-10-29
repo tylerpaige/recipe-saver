@@ -3,14 +3,16 @@ import { add, clean, list, open, queue, showLog, status } from "./commands.ts";
 import { preview, run } from "./run.ts";
 
 // Flags whose value can follow as the next argument, whatever it looks like (others only take a number there).
-const VALUED = new Set(["tag", "auto-tag"]);
+const VALUED = new Set(["tag", "auto-tag", "message"]);
+const SHORT: Record<string, string> = { m: "message" };
 
 /** Splits args into positionals and `--name value` / `--name=value` / bare `--name` flags. */
 function parseArgs(args: string[]): { rest: string[]; flags: Record<string, string | true> } {
   const rest: string[] = [];
   const flags: Record<string, string | true> = {};
   for (let i = 0; i < args.length; i++) {
-    const m = args[i].match(/^--([a-z-]+)(?:=(.*))?$/);
+    const m = args[i].match(/^--([a-z-]+)(?:=(.*))?$/) ??
+      (SHORT[args[i].slice(1)] && args[i].startsWith("-") ? [args[i], SHORT[args[i].slice(1)]] : null);
     if (!m) rest.push(args[i]);
     else if (m[2] !== undefined) flags[m[1]] = m[2];
     else if (/^\d+$/.test(args[i + 1] ?? "") || (VALUED.has(m[1]) && i + 1 < args.length)) flags[m[1]] = args[++i];
@@ -43,8 +45,9 @@ const usage = `usage: recipe-saver <command>
   status [id | url]            app status, or one recipe's
   log [id] [--tail [N]]        the log; --tail shows the last N lines (default 20)
   clean                        clear the logs
-  add <url> [--tag a,b] [--auto-tag=false]
-                               queue a URL, with your own tags; --auto-tag=false skips Claude's
+  add <url> [--tag a,b] [--auto-tag=false] [-m "note"]
+                               queue a URL, with your own tags; --auto-tag=false skips Claude's;
+                               -m/--message adds your note under the title
   preview <url>                run the pipeline and print the Markdown, saving nothing`;
 const pageNo = positiveInt(flags.page, 1);
 const autoTag = bool(flags["auto-tag"], true);
@@ -57,7 +60,9 @@ else if (cmd === "open" && rest.length === 1) await open(rest[0]);
 else if (cmd === "status" && rest.length <= 1) await status(rest[0]);
 else if (cmd === "log" && rest.length <= 1 && tail !== null) await showLog(rest[0], tail);
 else if (cmd === "clean" && !rest.length) await clean();
-else if (cmd === "add" && rest.length === 1 && flags.tag !== true && autoTag !== null) await add(rest[0], { tags, autoTag });
+else if (cmd === "add" && rest.length === 1 && flags.tag !== true && flags.message !== true && autoTag !== null) {
+  await add(rest[0], { tags, autoTag, message: (flags.message || "").trim() || undefined });
+}
 else if (cmd === "preview" && arg) await preview(arg);
 else {
   console.error(usage);
