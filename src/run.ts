@@ -4,6 +4,7 @@ import { CookieJar } from "./cookies.ts";
 import { SystemicError, TransientError } from "./errors.ts";
 import { itemId } from "./ids.ts";
 import { type AddOptions, inboxItems } from "./inbox.ts";
+import { refreshIngredients } from "./ingredients.ts";
 import { findRecipe } from "./library.ts";
 import { recipeFor } from "./pipeline.ts";
 import { renderMarkdown, writeRecipe } from "./render.ts";
@@ -81,6 +82,15 @@ export async function run() {
       }
     }
     await pruneDebug();
+    // So `cook` already knows what's in anything just saved. It catches up by itself if this fails.
+    if (items.length) {
+      try {
+        const read = await refreshIngredients();
+        if (read) await log(`read the ingredients of ${read} recipe${read === 1 ? "" : "s"} for cook`);
+      } catch (e) {
+        await log(`couldn't read ingredients for cook: ${e instanceof Error ? e.message : e}`);
+      }
+    }
   } finally {
     await jar.cleanup();
     await saveState(state);

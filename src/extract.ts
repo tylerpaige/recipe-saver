@@ -88,12 +88,12 @@ export interface Signals {
   frames?: Uint8Array[]; // JPEGs: video frames or carousel slides
 }
 
-async function getClient(): Promise<Anthropic> {
+export async function getClient(): Promise<Anthropic> {
   client ??= new Anthropic({ apiKey: await apiKey() });
   return client;
 }
 
-function apiError(error: unknown): unknown {
+export function apiError(error: unknown): unknown {
   if (error instanceof Anthropic.AuthenticationError || error instanceof Anthropic.PermissionDeniedError) {
     return new SystemicError("api-key", "The Anthropic API key was rejected.");
   }

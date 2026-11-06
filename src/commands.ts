@@ -1,11 +1,13 @@
 // The CLI commands other than `run` and `preview`. All read-only except `add`, `clean`, `config set` and `config unset`.
 import { join } from "@std/path";
 import { bin, EDITOR_APP, limits, paths } from "./config.ts";
+import { SystemicError, TransientError } from "./errors.ts";
 import { itemId } from "./ids.ts";
 import { type AddOptions, enqueue, inboxItems, pendingDownloads, URL_RE } from "./inbox.ts";
+import { type CookMatch, whatToCook } from "./ingredients.ts";
 import { findRecipe, readRecipes, type SavedRecipe } from "./library.ts";
 import { hashtag } from "./render.ts";
-import { mask, settings } from "./settings.ts";
+import { mask, pantry, settings } from "./settings.ts";
 import { loadState, logFile, runInProgress } from "./state.ts";
 
 export async function add(url: string, opts: AddOptions) {
@@ -106,9 +108,8 @@ function pickerRows(recipes: SavedRecipe[]): string[] {
   });
 }
 
-/** Lets you pick a recipe with `gum filter`. Undefined if you cancel. */
-async function pick(recipes: SavedRecipe[], header: string): Promise<SavedRecipe | undefined> {
-  const lines = pickerRows(recipes);
+/** Lets you pick a recipe with `gum filter`, one row per recipe. Undefined if you cancel. */
+async function pick(recipes: SavedRecipe[], lines: string[], header: string): Promise<SavedRecipe | undefined> {
   const plain = lines.map((l) => l.replace(ANSI_RE, ""));
   const child = new Deno.Command(bin.gum, {
     args: ["filter", "--no-strip-ansi", "--header", header, "--placeholder", "Type to filter by title, tag or date…"],
@@ -141,7 +142,7 @@ export async function list(tags: string[], pageNo: number, plain = false) {
   }
   if (!plain && await interactive()) {
     const noun = recipes.length === 1 ? "recipe" : "recipes";
-    const chosen = await pick(recipes, `${recipes.length} ${noun}${wanted.length ? ` tagged ${tagged}` : ""}`);
+    const chosen = await pick(recipes, pickerRows(recipes), `${recipes.length} ${noun}${wanted.length ? ` tagged ${tagged}` : ""}`);
     if (chosen) await openFile(chosen.file);
     return;
   }
@@ -164,6 +165,60 @@ export async function list(tags: string[], pageNo: number, plain = false) {
     const next = ["recipe-saver list", ...tags.map((t) => t.includes(" ") ? `"${t}"` : t), `--page ${pageNo + 1}`];
     console.log(`\nPage ${pageNo} of ${pages}. Next: ${next.join(" ")}`);
   } else if (pages > 1) console.log(`\nPage ${pageNo} of ${pages}.`);
+}
+
+/** "2/3": how many of your ingredients a recipe uses. */
+const score = (m: CookMatch, of: number) => `${m.uses.length}/${of}`;
+const cookDetails = (m: CookMatch) =>
+  [m.uses.join(", "), m.missing.length ? `needs ${m.missing.join(", ")}` : "needs nothing else"].join(" · ");
+
+/** One picker row: score, title, then what it uses and needs, dimmed and cut to fit the terminal. */
+function cookRows(matches: CookMatch[], of: number): string[] {
+  const titles = matches.map(({ recipe: r }) => {
+    const t = r.title + flagFor(r);
+    return t.length > MAX_TITLE ? t.slice(0, MAX_TITLE - 1) + "…" : t;
+  });
+  const titleWidth = Math.max(...titles.map((t) => t.length));
+  const scoreWidth = `${of}/${of}`.length;
+  const room = Deno.consoleSize().columns - 2 - scoreWidth - 2 - titleWidth - 2;
+  return matches.map((m, i) => {
+    const details = cookDetails(m);
+    const shown = details.length > room ? details.slice(0, Math.max(room - 1, 0)) + "…" : details;
+    return `${score(m, of).padStart(scoreWidth)}  ${titles[i].padEnd(titleWidth)}  \x1b[2m${shown}\x1b[0m`;
+  });
+}
+
+/**
+ * Saved recipes that use the ingredients you have, those using the most first.
+ * In a terminal, a `gum filter` picker that opens the chosen recipe; otherwise (or with `plain`) the whole list.
+ */
+export async function cook(have: string[], plain = false) {
+  let matches: CookMatch[];
+  try {
+    matches = await whatToCook(have, await pantry(), (n) => {
+      console.error(`Reading the ingredients of ${n} recipe${n === 1 ? "" : "s"} (once per new or edited recipe)…`);
+    });
+  } catch (e) {
+    if (!(e instanceof SystemicError || e instanceof TransientError)) throw e;
+    console.error(e.message);
+    Deno.exit(1);
+  }
+  const asked = have.join(", ");
+  if (!matches.length) {
+    console.log(`No saved recipes use ${asked}.`);
+    return;
+  }
+  const noun = matches.length === 1 ? "recipe uses" : "recipes use";
+  if (!plain && await interactive()) {
+    const chosen = await pick(matches.map((m) => m.recipe), cookRows(matches, have.length), `${matches.length} ${noun} ${asked}`);
+    if (chosen) await openFile(chosen.file);
+    return;
+  }
+  console.log(`${matches.length} ${noun} ${asked}:`);
+  for (const m of matches) {
+    console.log(`\n${score(m, have.length)}  ${m.recipe.title}${flagFor(m.recipe)}`);
+    console.log(dim(`      ${cookDetails(m)}`));
+  }
 }
 
 async function agentLoaded(): Promise<boolean> {
@@ -296,7 +351,8 @@ export async function unsetConfig(key: string) {
   const setting = findSetting(key);
   console.log(await setting.unset() ? `Removed ${key}` : `${key} wasn't set.`);
   const current = await setting.get();
-  if (current) console.error(`It's still set by ${current.source}.`);
+  if (current?.source === "default") console.log(`Back to the default: ${current.value}`);
+  else if (current) console.error(`It's still set by ${current.source}.`);
 }
 
 function findSetting(key: string) {

@@ -70,6 +70,7 @@ Edit recipes freely in iA Writer: rename them, move them around the Recipes fold
 | Queue | `~/Library/Mobile Documents/iCloud~is~workflow~my~workflows/Documents/recipe-inbox/` (iCloud Drive › Shortcuts › recipe-inbox) |
 | Log, `state.json` (not-a-recipe IDs, retry counts, last error), debug data | `~/Library/Application Support/recipe-saver/` |
 | API key | Keychain, service `recipe-saver` |
+| Other settings (`pantry`), ingredient cache for `cook` | `settings.json`, `ingredients.json` in `~/Library/Application Support/recipe-saver/` |
 | Program | `~/bin/recipe-saver`, built from `src/` by `deno task compile` |
 
 Debug data (raw post info, transcripts, Claude's extractions) is kept per ID for 30 days.
@@ -132,6 +133,8 @@ deno task dev preview <url>   # run the full pipeline, print Markdown, save noth
 ~/bin/recipe-saver list mushroom weeknight  # only recipes tagged with all of these
 ~/bin/recipe-saver list "comfort food"      # quote a multi-word tag (matches #comfort_food)
 ~/bin/recipe-saver list --plain             # print instead, 10 per page (--page 2 for more); the default when piped
+~/bin/recipe-saver cook kabocha, kale, chickpeas  # pick a recipe that uses what you have, most of it first
+~/bin/recipe-saver cook "butternut squash" feta --plain  # print instead; without commas, each argument is one ingredient
 ~/bin/recipe-saver open <id>                # open a saved recipe in iA Writer (a shared URL works too)
 ~/bin/recipe-saver status     # idle_no_queue | waiting_to_start | processing | error
 ~/bin/recipe-saver status <id>              # one recipe: waiting_to_start | processing | error | saved | not_recipe | not_found
@@ -143,10 +146,21 @@ deno task dev preview <url>   # run the full pipeline, print Markdown, save noth
 ~/bin/recipe-saver config get anthropic-api-key --reveal  # print one setting (secrets masked without --reveal)
 ~/bin/recipe-saver config unset anthropic-api-key        # remove it from Keychain
 ~/bin/recipe-saver config set anthropic-api-key  # replace the API key: asks for it, checks it with Anthropic, saves to Keychain
+~/bin/recipe-saver config set pantry "garlic, onion, miso, soy sauce"  # staples `cook` never lists as missing
 ~/bin/recipe-saver run        # drain the inbox now (launchd does this automatically)
 ```
 
 After changing code: `deno task compile` (launchd runs `~/bin/recipe-saver`).
+
+### What can I cook?
+
+`recipe-saver cook <ingredients>` ranks saved recipes by how many of your ingredients they use, then by how little else they need. Each row shows what it uses and what's missing: `2/3  Spiced Honeynut Squash Dal  kabocha for honeynut squash, onion · needs ginger, red lentils`. Quantities are ignored, and `needs-source` recipes are left out.
+
+- **Spelling and names.** `zuchini` finds courgette, and `kabocha` covers a recipe's "winter squash". A more specific kind counts as a match (your tofu is the recipe's firm tofu).
+- **Swaps count.** An ingredient you'd swap without a second thought counts, labelled so you can judge it: kabocha for butternut squash, butter beans for cannellini, kale for cavolo nero.
+- **Pantry.** Salt, pepper, oils, sugar, flour and dried spices are never counted as missing, and neither is anything listed by `config get pantry` (garlic, onion, miso until you change it). Optional, garnish and to-serve ingredients don't count either. A staple you name yourself still counts as a match.
+
+How it works: Claude reads each recipe's Ingredients section into plain names once and caches them in `ingredients.json`. A recipe is read again only when you edit its ingredients, and `run` reads new recipes as they're saved. Each `cook` makes one Claude call to match your words to those names (~10 s); the counting and ranking is plain code.
 
 ## When something breaks
 

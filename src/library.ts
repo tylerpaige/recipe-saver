@@ -10,9 +10,12 @@ export interface SavedRecipe {
   saved: string;
   tags: string[];
   status: string;
+  ingredients: string; // the "## Ingredients" section as written, sub-headings included; "" if there isn't one
 }
 
 const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---/;
+// From "## Ingredients" up to the next "## " heading or the end of the file.
+const INGREDIENTS_RE = /^## Ingredients[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m;
 // A #tag at the start of a line or after whitespace; "# Heading" and URL #fragments don't match.
 const HASHTAG_RE = /(?<=^|\s)#([\p{L}\p{N}_-]+)/gmu;
 
@@ -44,6 +47,7 @@ export async function readRecipes(): Promise<SavedRecipe[]> {
         saved: String(fm.saved ?? mtime.toISOString().slice(0, 10)),
         tags: hashtags(text),
         status: String(fm.status ?? ""),
+        ingredients: text.match(INGREDIENTS_RE)?.[1].trim() ?? "",
       });
     }
   } catch (e) {

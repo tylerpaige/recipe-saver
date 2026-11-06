@@ -71,6 +71,13 @@ Rules:
 - **The Recipes folder is the record of what's saved.** A file's `id` marks that URL as done, wherever the file is and whatever it's called. Delete the file and re-share the URL to have it processed again.
 - **Recipe files are living documents.** You edit them in iA Writer, and when the format changes, existing files are updated to match (front-matter only; the body and your edits are kept). Saving never overwrites an existing file: filename collisions get `-2`, `-3`, …
 
+## Cooking from what you have (`cook`)
+
+- Input: a list of ingredients you have; quantities ignored. Output: saved recipes (not `needs-source`) using at least one, ranked by how many they use, then fewest other ingredients still needed, then newest.
+- Index: Claude reads each recipe's `## Ingredients` section (the file, so hand edits count) into `{options, staple, optional}` per line; "X or Y" lines have several options. Cached in `ingredients.json` by recipe `id` and a hash of the section; `run` refreshes it after saving.
+- Query: one Claude call maps each of your terms, and each pantry item, onto the index's names: the same ingredient (spelling, plurals, regional names, more general or more specific names) or a no-second-thought substitute. Exact names are matched in code too.
+- Missing = not matched, not a staple, not optional, not in your pantry (`config set pantry`; default garlic, onion, miso). Substitutes count fully and are shown as "kabocha for butternut squash".
+
 ## Operations
 
 - **Cookies:** Waterfox profile (`~/Library/Application Support/Waterfox/Profiles/*.default-release`). Copy `cookies.sqlite` + `-wal` to a temp dir, export instagram.com cookies only to a temp Netscape `cookies.txt`, pass via `--cookies`, delete after. No Full Disk Access needed.

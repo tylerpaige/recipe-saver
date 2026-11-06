@@ -1,7 +1,34 @@
-// Settings changed with `recipe-saver config`. Secrets live in Keychain, never in a file.
+// Settings changed with `recipe-saver config`. Secrets live in Keychain, never in a file; the rest in settings.json.
 import Anthropic from "@anthropic-ai/sdk";
-import { bin, KEYCHAIN_SERVICE } from "./config.ts";
+import { join } from "@std/path";
+import { bin, KEYCHAIN_SERVICE, paths } from "./config.ts";
 import { loadState, saveState } from "./state.ts";
+
+// Ingredients `cook` assumes you always have, on top of salt, oil, dried spices and the like.
+const DEFAULT_PANTRY = "garlic, onion, miso";
+
+const settingsFile = () => join(paths.state, "settings.json");
+
+async function readSettingsFile(): Promise<Record<string, string>> {
+  try {
+    return JSON.parse(await Deno.readTextFile(settingsFile()));
+  } catch {
+    return {};
+  }
+}
+
+async function writeSettingsFile(values: Record<string, string>): Promise<void> {
+  await Deno.mkdir(paths.state, { recursive: true });
+  const tmp = `${settingsFile()}.tmp`;
+  await Deno.writeTextFile(tmp, JSON.stringify(values, null, 2));
+  await Deno.rename(tmp, settingsFile());
+}
+
+/** Your pantry staples, from `config set pantry`, else the default. */
+export async function pantry(): Promise<string[]> {
+  const value = (await readSettingsFile()).pantry ?? DEFAULT_PANTRY;
+  return value.split(",").map((s) => s.trim()).filter(Boolean);
+}
 
 interface Setting {
   description: string;
@@ -81,6 +108,26 @@ export const settings: Record<string, Setting> = {
       return warning;
     },
     unset: keychainDelete,
+  },
+  pantry: {
+    description: "Comma-separated staples `cook` never counts as missing (salt, oil, dried spices are always included)",
+    secret: false,
+    async get() {
+      const value = (await readSettingsFile()).pantry;
+      return value ? { value, source: settingsFile() } : { value: DEFAULT_PANTRY, source: "default" };
+    },
+    async set(value) {
+      const items = value.split(",").map((s) => s.trim()).filter(Boolean);
+      if (!items.length) throw new Error("Give a comma-separated list, e.g. \"garlic, onion, miso\".");
+      await writeSettingsFile({ ...(await readSettingsFile()), pantry: items.join(", ") });
+    },
+    async unset() {
+      const values = await readSettingsFile();
+      if (values.pantry === undefined) return false;
+      delete values.pantry;
+      await writeSettingsFile(values);
+      return true;
+    },
   },
 };
 
