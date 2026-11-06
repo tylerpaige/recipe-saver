@@ -5,12 +5,13 @@ import { SystemicError, TransientError } from "./errors.ts";
 import { itemId } from "./ids.ts";
 import { type AddOptions, enqueue, inboxItems, pendingDownloads, URL_RE } from "./inbox.ts";
 import {
-  addAlias, addKind, addSwaps, allRules, type CookMatch, ingredientInfo, ingredientNames, removeRule, whatToCook,
+  addAlias, addKind, addSwaps, allRules, type CookMatch, ingredientInfo, type IngredientInfo, ingredientNames, removeRule,
+  standIns, whatToCook,
 } from "./ingredients.ts";
 import { findRecipe, readRecipes, type SavedRecipe } from "./library.ts";
 import { RuleError } from "./rulebook.ts";
 import { hashtag } from "./render.ts";
-import { mask, pantry, settings } from "./settings.ts";
+import { mask, pantry, savePantry, settings } from "./settings.ts";
 import { loadState, logFile, runInProgress } from "./state.ts";
 
 export async function add(url: string, opts: AddOptions) {
@@ -173,7 +174,7 @@ export async function list(tags: string[], pageNo: number, plain = false) {
 }
 
 /** "2/3": how many of your ingredients a recipe uses. */
-const score = (m: CookMatch, of: number) => `${m.uses.length}/${of}`;
+const score = (m: CookMatch, of: number) => `${m.count}/${of}`;
 const cookDetails = (m: CookMatch) =>
   [m.uses.join(", "), m.missing.length ? `needs ${m.missing.join(", ")}` : "needs nothing else"].join(" · ");
 
@@ -239,6 +240,12 @@ export async function cook(have: string[], plain = false) {
 export const splitNames = (args: string[]) =>
   (args.some((a) => a.includes(",")) ? args.join(" ").split(",") : args).map((t) => t.trim()).filter(Boolean);
 
+/**
+ * Names where commas are the only separator: `swap chili peppers` is one name. For commands that write rules or the
+ * pantry, where reading "chili peppers" as two names would silently save the wrong thing.
+ */
+const commaNames = (args: string[]) => args.join(" ").split(",").map((t) => t.trim()).filter(Boolean);
+
 const INGREDIENT_USAGE = `usage: recipe-saver ingredient [name]           the rulebook, or what it says about one ingredient
        recipe-saver ingredient alias <name>, <name it's another name for>
        recipe-saver ingredient kind <name>, <what it's a kind of>
@@ -248,12 +255,12 @@ const INGREDIENT_USAGE = `usage: recipe-saver ingredient [name]           the ru
 
 /**
  * `recipe-saver ingredient`: shows the rulebook, or one ingredient's rules and recipes, or changes a rule.
- * Names with spaces need commas between them (kind red onion, onion) or quotes.
+ * Commas separate names (kind red onion, onion); without one, everything after the verb is a single name.
  */
 export async function ingredient(args: string[]) {
   const [verb, ...rest] = args;
   const one = rest.join(" ").trim();
-  const two = splitNames(rest);
+  const two = commaNames(rest);
   const fail = (): never => {
     console.error(INGREDIENT_USAGE);
     Deno.exit(2);
@@ -290,22 +297,28 @@ async function showIngredient(name: string) {
     ["kinds of it", info.kinds],
     ["swaps with", info.swaps],
   ];
-  for (const [label, values] of rows) if (values.length) console.log(`  ${label.padEnd(12)} ${values.join(", ")}`);
+  for (const [label, values] of rows) if (values.length) console.log(`  ${label.padEnd(13)} ${values.join(", ")}`);
+  printMakes(info, 13);
   for (const [label, recipes] of [["recipes", info.recipes], ["as a swap", info.swapRecipes]] as const) {
     if (!recipes.length && label === "as a swap") continue;
-    console.log(`  ${label.padEnd(12)} ${recipes.length || "none"}`);
+    console.log(`  ${label.padEnd(13)} ${recipes.length || "none"}`);
     for (const r of recipes) console.log(dim(`    ${r.title}`));
   }
 }
 
-/** What you can use instead of one ingredient. */
+/** The ways to make it from others, the recipe-like line under each. */
+function printMakes(info: IngredientInfo, width: number) {
+  info.makes.forEach((w, i) => {
+    const label = i ? "" : "make it from";
+    console.log(`  ${label.padEnd(width)} ${w.from}${w.of === info.name ? "" : dim(` (as ${w.of})`)}`);
+    if (w.how) console.log(`  ${"".padEnd(width)} ${dim(w.how)}`);
+  });
+}
+
+/** What you can use instead of one ingredient, asking Claude the first time it meets the name. */
 async function showSwaps(name: string) {
-  const info = await ingredientInfo(name);
-  if (!info) {
-    console.error(`Neither the rulebook nor any recipe mentions ${name}.`);
-    Deno.exit(1);
-  }
-  if (!info.swaps.length && !info.kinds.length && !info.kindOf.length) {
+  const info = await standIns(name, (msg) => console.error(msg));
+  if (!info.swaps.length && !info.kinds.length && !info.kindOf.length && !info.makes.length) {
     console.log(`Nothing in the rulebook stands in for ${info.name}. Add some: recipe-saver ingredient swap ${info.name}, <name>`);
     return;
   }
@@ -313,10 +326,12 @@ async function showSwaps(name: string) {
   if (info.swaps.length) console.log(`  ${"swaps".padEnd(13)} ${info.swaps.join(", ")}`);
   if (info.kinds.length) console.log(`  ${"kinds of it".padEnd(13)} ${info.kinds.join(", ")}`);
   if (info.kindOf.length) console.log(`  ${"more general".padEnd(13)} ${info.kindOf.join(", ")}`);
+  if (info.siblings.length) console.log(`  ${"".padEnd(13)} ${dim(`other ${info.kindOf[0]}:`)} ${info.siblings.join(", ")}`);
+  printMakes(info, 13);
 }
 
 async function showRules() {
-  const { file, aliases, kinds, swaps } = await allRules();
+  const { file, aliases, kinds, swaps, makes } = await allRules();
   const grouped = (title: string, rows: { to: string; from: string[] }[], arrow: string) => {
     console.log(`\n${title} (${rows.reduce((n, r) => n + r.from.length, 0)})`);
     const width = Math.min(Math.max(0, ...rows.map((r) => r.to.length)), 24);
@@ -327,7 +342,52 @@ async function showRules() {
   grouped("Kinds", kinds, "⊃");
   console.log(`\nSwaps (${swaps.length} groups)`);
   for (const g of swaps) console.log(`  ${g.join(" · ")}`);
+  console.log(`\nMakes (${makes.length})`);
+  const width = Math.min(Math.max(0, ...makes.map((m) => m.name.length)), 24);
+  for (const { name, ways } of makes) {
+    ways.forEach((w, i) => console.log(`  ${(i ? "" : name).padEnd(width)}  ${dim("←")} ${w.from}`));
+  }
   console.log(dim(`\nOne ingredient: recipe-saver ingredient <name>. Change a rule: recipe-saver ingredient alias|kind|swap …`));
+}
+
+const PANTRY_USAGE = `usage: recipe-saver pantry [list]               what cook assumes you always have
+       recipe-saver pantry add <item>, <item>, ...
+       recipe-saver pantry remove <item>, <item>, ...`;
+
+/** Pantry items match however they're capitalised, and singular or plural. */
+const sameItem = (a: string, b: string) => {
+  const fold = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim().replace(/e?s$/, "");
+  return fold(a) === fold(b);
+};
+
+/** `recipe-saver pantry`: lists, adds to or removes from what `cook` never counts as missing. */
+export async function pantryCommand(args: string[]) {
+  const [verb = "list", ...rest] = args;
+  const items = commaNames(rest);
+  const current = await pantry();
+  if (verb === "list" && !items.length) {
+    console.log(current.length ? current.join(", ") : "Your pantry is empty.");
+    console.log(dim("Salt, pepper, oils, sugar, flour and dried spices always count as on hand too."));
+  } else if (verb === "add" && items.length) {
+    const added = items.filter((i, n) => !current.some((c) => sameItem(c, i)) && items.findIndex((j) => sameItem(i, j)) === n);
+    const already = items.filter((i) => current.some((c) => sameItem(c, i)));
+    if (added.length) await savePantry([...current, ...added]);
+    if (added.length) console.log(`Added ${added.join(", ")}.`);
+    if (already.length) console.log(`Already in your pantry: ${already.join(", ")}.`);
+    console.log(dim(`Pantry: ${[...current, ...added].join(", ")}`));
+  } else if (verb === "remove" && items.length) {
+    const kept = current.filter((c) => !items.some((i) => sameItem(c, i)));
+    const missing = items.filter((i) => !current.some((c) => sameItem(c, i)));
+    if (kept.length < current.length) {
+      await savePantry(kept);
+      console.log(`Removed ${current.filter((c) => !kept.includes(c)).join(", ")}.`);
+    }
+    if (missing.length) console.log(`Not in your pantry: ${missing.join(", ")}.`);
+    console.log(dim(kept.length ? `Pantry: ${kept.join(", ")}` : "Your pantry is empty."));
+  } else {
+    console.error(PANTRY_USAGE);
+    Deno.exit(2);
+  }
 }
 
 async function agentLoaded(): Promise<boolean> {

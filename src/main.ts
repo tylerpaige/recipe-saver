@@ -8,6 +8,7 @@ import {
   list,
   listConfig,
   open,
+  pantryCommand,
   queue,
   setConfig,
   showConfig,
@@ -69,6 +70,9 @@ const usage = `usage: recipe-saver <command>
                                these stand in for each other
   ingredient unalias|unkind|unswap <name>
                                remove one of an ingredient's rules
+  pantry [list]                what cook assumes you always have (never counted as missing)
+  pantry add|remove <item>, ...
+                               change it
   open <id | url>              open a saved recipe in iA Writer
   status [id | url]            app status, or one recipe's
   log [id] [--tail [N]]        the log; --tail shows the last N lines (default 20)
@@ -92,6 +96,7 @@ if (cmd === "run") await run();
 else if (cmd === "queue") await queue();
 else if (cmd === "list" && pageNo) await list(rest, pageNo, flags.plain === true || flags.page !== undefined);
 else if (cmd === "ingredient") await ingredient(rest);
+else if (cmd === "pantry") await pantryCommand(rest);
 else if (cmd === "cook") await cook(have, flags.plain === true);
 else if (cmd === "open" && rest.length === 1) await open(rest[0]);
 else if (cmd === "status" && rest.length <= 1) await status(rest[0]);

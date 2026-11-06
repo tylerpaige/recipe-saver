@@ -77,9 +77,11 @@ Rules:
 - No AI at query time, except once for a word never seen before. Claude's two jobs, each done once:
   - **Index** (on save, or when a recipe's `## Ingredients` section changes): each line becomes `{options, staple, optional}`, reusing names already in use. Cached in `ingredients.json` by recipe `id` and a hash of the section.
   - **Rulebook** (`ingredients.yaml`, hand-editable; starts as a copy of the bundled `src/ingredients.default.yaml` and is never replaced by later versions of it): every new name is placed as an alias (courgette → zucchini, typos included), a kind (red onion → onion) and/or a member of a swap group. Claude only adds; names it has placed are recorded in `ingredients.json` so deleted rules aren't re-added. Names that already have a rule aren't sent to Claude.
+- **Makes**: a rulebook section of ways to make an ingredient from others (`from` components, "x or y" options, a `how` line with amounts). Claude is asked once per name (recorded in `ingredients.json`), for recipe names as they're indexed and on demand by `ingredient swap <name>`. In `cook`, an ingredient you don't have is covered when every component of a way is something you have, a staple, or in your pantry.
+- `recipe-saver pantry [list|add|remove]` edits the pantry setting (same value as `config set pantry`); an emptied pantry stays empty.
 - `recipe-saver ingredient` reads the rulebook (all of it, or one name with its recipes) and edits it (alias, kind, swap and their un- forms), refusing loops. Hand edits mark the name as placed, so Claude never revisits it. No Claude calls.
 - Matching: names are lowercased, aliases followed, and singular/plural folded. Having X covers a recipe's Y when one is the other or a kind of it (either direction). It's a labelled swap when they share a swap group.
-- Missing = not matched, not a staple, not optional, not in your pantry (`config set pantry`; default garlic, onion, miso). Substitutes count fully.
+- Missing = not matched, not a staple, not optional, not in your pantry (`recipe-saver pantry`; default garlic, onion, miso), and not makeable from those. Substitutes count fully.
 
 ## Operations
 

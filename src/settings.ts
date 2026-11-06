@@ -24,10 +24,15 @@ async function writeSettingsFile(values: Record<string, string>): Promise<void> 
   await Deno.rename(tmp, settingsFile());
 }
 
-/** Your pantry staples, from `config set pantry`, else the default. */
+/** Your pantry staples, from `pantry add`/`remove` or `config set pantry`, else the default. */
 export async function pantry(): Promise<string[]> {
   const value = (await readSettingsFile()).pantry ?? DEFAULT_PANTRY;
   return value.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+/** Saves your pantry. Empty is allowed, and stays empty rather than going back to the default. */
+export async function savePantry(items: string[]): Promise<void> {
+  await writeSettingsFile({ ...(await readSettingsFile()), pantry: items.join(", ") });
 }
 
 interface Setting {
@@ -114,7 +119,8 @@ export const settings: Record<string, Setting> = {
     secret: false,
     async get() {
       const value = (await readSettingsFile()).pantry;
-      return value ? { value, source: settingsFile() } : { value: DEFAULT_PANTRY, source: "default" };
+      if (value === undefined) return { value: DEFAULT_PANTRY, source: "default" };
+      return { value: value || "(empty)", source: settingsFile() };
     },
     async set(value) {
       const items = value.split(",").map((s) => s.trim()).filter(Boolean);

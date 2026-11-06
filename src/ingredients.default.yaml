@@ -6,6 +6,7 @@
 # kinds:   an ingredient -> what it's a kind of               (red onion: onion)
 #          Having either counts as having the other.
 # swaps:   groups that stand in for each other, shown as "kabocha for butternut squash"
+# makes:   ways to make an ingredient from others; "x or y" when either works   (ketchup ← tomato paste, vinegar, sugar or honey)
 
 aliases:
   aubergine: eggplant
@@ -134,3 +135,89 @@ swaps:
   - [soy sauce, tamari]
   - [tahini, sesame paste]
   - [cod, flaky white fish]
+
+makes:
+  # condiments and sauces
+  ketchup:
+    - from: [tomato paste, vinegar, sugar or honey]
+      how: 1 tbsp tomato paste + 1 tsp vinegar + ½ tsp sugar, loosened with a splash of water (per 1 tbsp ketchup)
+  tomato sauce:
+    - from: [tomato paste, water]
+      how: 1 part tomato paste + 1 part water, seasoned with salt
+  passata:
+    - from: [canned tomatoes]
+      how: blend canned whole tomatoes, then push through a sieve
+  hot honey:
+    - from: [honey, chilli flakes]
+      how: warm ½ cup honey with 1–2 tsp chilli flakes, steep 10 min (a splash of vinegar is optional)
+  seasoned rice vinegar:
+    - from: [rice wine vinegar, sugar]
+      how: ¼ cup rice vinegar + 1 tbsp sugar + 1 tsp salt, stirred until dissolved
+  mirin:
+    - from: [sake or dry white wine, sugar]
+      how: 1 tbsp sake + ½ tsp sugar (per 1 tbsp mirin)
+  tahini:
+    - from: [sesame seeds, neutral oil]
+      how: toast 1 cup sesame seeds, blend with 2–4 tbsp oil until smooth
+  pesto:
+    - from: [basil, parmesan cheese, pine nuts or walnuts, garlic, olive oil]
+      how: 2 cups basil + ½ cup parmesan + ⅓ cup nuts + 2 garlic cloves + ½ cup olive oil, blended
+  breadcrumbs:
+    - from: [bread]
+      how: dry or toast stale bread, then blitz to crumbs
+  # dairy
+  buttermilk:
+    - from: [milk, lemon juice or vinegar]
+      how: 1 cup milk + 1 tbsp lemon juice or vinegar, stand 5–10 min (makes 1 cup)
+    - from: [plain yogurt, milk]
+      how: ¾ cup yogurt + ¼ cup milk, whisked (makes 1 cup)
+  heavy cream:
+    - from: [milk, butter]
+      how: ¾ cup milk + ¼ cup melted butter (makes 1 cup; for cooking, it won't whip)
+  evaporated milk:
+    - from: [milk]
+      how: simmer 2¼ cups milk down to 1 cup
+  sweetened condensed milk:
+    - from: [milk, sugar]
+      how: simmer 2 cups milk + ⅔ cup sugar, stirring, until reduced to about 1 cup
+  ricotta:
+    - from: [whole milk, lemon juice or vinegar]
+      how: heat 4 cups whole milk with a pinch of salt to just steaming, stir in 3 tbsp lemon juice, rest 10 min, strain (makes ~1 cup)
+  crème fraîche:
+    - from: [heavy cream, buttermilk]
+      how: 1 cup cream + 2 tbsp buttermilk, covered at room temperature 12–24 h
+  # baking
+  self-raising flour:
+    - from: [all-purpose flour, baking powder]
+      how: 1 cup flour + 1½ tsp baking powder + ¼ tsp salt
+  cake flour:
+    - from: [all-purpose flour, cornstarch]
+      how: 1 cup flour, take out 2 tbsp, add 2 tbsp cornstarch, sift
+  oat flour:
+    - from: [rolled oats]
+      how: blend 1¼ cups oats until fine (makes 1 cup)
+  baking powder:
+    - from: [baking soda, cream of tartar]
+      how: ¼ tsp baking soda + ½ tsp cream of tartar (per 1 tsp baking powder)
+  brown sugar:
+    - from: [sugar, molasses]
+      how: 1 cup sugar + 1 tbsp molasses (2 tbsp for dark brown sugar)
+  powdered sugar:
+    - from: [sugar, cornstarch]
+      how: 1 cup sugar + 1 tbsp cornstarch, blended until powdery
+  # spice blends
+  garam masala:
+    - from: [cumin, ground coriander, cardamom, black pepper, cinnamon, cloves]
+      how: 1 tbsp ground cumin + 1 tbsp ground coriander + 1½ tsp cardamom + 1½ tsp black pepper + 1 tsp cinnamon + ½ tsp cloves
+  curry powder:
+    - from: [ground coriander, cumin, turmeric, ginger, chilli powder]
+      how: 2 tbsp ground coriander + 1 tbsp cumin + 1 tbsp turmeric + 1 tsp ground ginger + ½ tsp chilli powder + ½ tsp black pepper
+  taco seasoning:
+    - from: [chilli powder, cumin, paprika, garlic powder, onion powder, oregano]
+      how: 1 tbsp chilli powder + 1½ tsp cumin + 1 tsp paprika + ½ tsp each garlic powder, onion powder, oregano, salt, pepper (≈ 1 packet)
+  italian seasoning:
+    - from: [basil, oregano, thyme, rosemary]
+      how: equal parts dried basil, oregano, thyme and rosemary
+  pumpkin pie spice:
+    - from: [cinnamon, ginger, nutmeg, cloves]
+      how: 3 tsp cinnamon + 2 tsp ground ginger + 1 tsp nutmeg + ½ tsp cloves

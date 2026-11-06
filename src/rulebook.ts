@@ -1,5 +1,6 @@
 // The rulebook, ingredients.yaml: how `cook` decides that what you have covers what a recipe needs.
-// Aliases (courgette -> zucchini), kinds (red onion -> onion) and swap groups ([butternut squash, kabocha]).
+// Aliases (courgette -> zucchini), kinds (red onion -> onion), swap groups ([butternut squash, kabocha]) and
+// ways to make an ingredient from others (ketchup from tomato paste, vinegar and sugar).
 // Claude adds to it (see ingredients.ts); you edit it by hand or with `recipe-saver ingredient`.
 import { join } from "@std/path";
 import { type Document, isMap, isScalar, isSeq, parseDocument, type YAMLMap, type YAMLSeq } from "yaml";
@@ -21,7 +22,7 @@ export async function writeAtomic(file: string, text: string): Promise<void> {
   await Deno.rename(`${file}.tmp`, file);
 }
 
-const SECTIONS = { aliases: {}, kinds: {}, swaps: [] } as const;
+const SECTIONS = { aliases: {}, kinds: {}, swaps: [], makes: {} } as const;
 
 export async function loadRules(): Promise<Document> {
   let doc: Document;
@@ -45,29 +46,69 @@ export async function loadRules(): Promise<Document> {
 export async function saveRules(doc: Document): Promise<void> {
   for (const key of Object.keys(SECTIONS)) (doc.get(key, true) as { flow?: boolean }).flow = false;
   for (const group of (doc.get("swaps", true) as YAMLSeq).items) if (isSeq(group)) group.flow = true;
+  // makes: one way per item, its `from` list on one line.
+  for (const pair of (doc.get("makes", true) as YAMLMap).items) {
+    if (!isSeq(pair.value)) continue;
+    for (const way of pair.value.items) {
+      if (!isMap(way)) continue;
+      way.flow = false;
+      const from = way.get("from", true);
+      if (isSeq(from)) from.flow = true;
+    }
+  }
   await writeAtomic(rulesFile(), doc.toString({ lineWidth: 0, flowCollectionPadding: false }));
+}
+
+/** One way to make an ingredient: its components, each a list of options ("sugar or honey"), and how. */
+export interface Way {
+  from: string[][];
+  how: string;
 }
 
 export interface Rules {
   aliases: Map<string, string>;
   kinds: Map<string, string>;
   swaps: string[][];
+  makes: Map<string, Way[]>;
 }
+
+/** A `from` list as written: ["tomato paste", "sugar or honey"], or one string "tomato paste, sugar or honey". */
+const components = (from: unknown): string[][] =>
+  (Array.isArray(from) ? from : String(from ?? "").split(","))
+    .map((c) => String(c).split(/\s+or\s+/).map(norm).filter(Boolean))
+    .filter((c) => c.length);
 
 export function rulesOf(doc: Document): Rules {
   const js = doc.toJS() ?? {};
   const pairs = (o: unknown) => new Map(Object.entries(o ?? {}).map(([k, v]) => [norm(k), norm(String(v))]));
   const swaps = Array.isArray(js.swaps) ? js.swaps.filter(Array.isArray) : [];
-  return { aliases: pairs(js.aliases), kinds: pairs(js.kinds), swaps: swaps.map((g: unknown[]) => g.map((n) => norm(String(n)))) };
+  const makes = new Map<string, Way[]>();
+  for (const [name, value] of Object.entries(js.makes ?? {})) {
+    const ways = (Array.isArray(value) ? value : [value])
+      .filter((w): w is { from?: unknown; how?: unknown } => !!w && typeof w === "object")
+      .map((w) => ({ from: components(w.from), how: String(w.how ?? "") }))
+      .filter((w) => w.from.length);
+    if (ways.length) makes.set(norm(name), ways);
+  }
+  return {
+    aliases: pairs(js.aliases),
+    kinds: pairs(js.kinds),
+    swaps: swaps.map((g: unknown[]) => g.map((n) => norm(String(n)))),
+    makes,
+  };
 }
 
 /** Every name the rules mention. */
-export const ruleNames = (r: Rules) => [...r.aliases.keys(), ...r.aliases.values(), ...r.kinds.keys(), ...r.kinds.values(), ...r.swaps.flat()];
+export const ruleNames = (r: Rules) => [
+  ...r.aliases.keys(), ...r.aliases.values(), ...r.kinds.keys(), ...r.kinds.values(), ...r.swaps.flat(),
+  ...r.makes.keys(), ...[...r.makes.values()].flat().flatMap((w) => w.from.flat()),
+];
 
 /** Answers "does having X cover a recipe's Y?" from the rules alone. */
 export class Matcher {
   private known: Set<string>;
   private groups = new Map<string, Set<number>>(); // name -> the swap groups it's in
+  private makes = new Map<string, Way[]>(); // by the name the rules use
 
   constructor(private rules: Rules, names: Iterable<string>) {
     this.known = new Set([...names].map(norm).concat(ruleNames(rules)));
@@ -77,6 +118,10 @@ export class Matcher {
         this.groups.set(c, (this.groups.get(c) ?? new Set()).add(i));
       }
     });
+    for (const [name, ways] of rules.makes) {
+      const c = this.canon(name);
+      this.makes.set(c, [...this.makes.get(c) ?? [], ...ways]);
+    }
   }
 
   private alias(n: string): string {
@@ -108,6 +153,11 @@ export class Matcher {
       out.push(n);
     }
     return out;
+  }
+
+  /** Ways to make it, or what it's a kind of, from other ingredients. `of` is the name each way makes. */
+  ways(name: string): { of: string; way: Way }[] {
+    return this.ancestors(name).flatMap((of) => (this.makes.get(of) ?? []).map((way) => ({ of, way })));
   }
 
   /** "same" when one is the other or a kind of it (either way round), "swap" when they share a swap group. Takes canon names. */

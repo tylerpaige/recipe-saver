@@ -1,6 +1,7 @@
 // `cook`: which saved recipes use the ingredients you have. Claude does two jobs, each once: it reads a recipe's
 // Ingredients section into plain names when the recipe is saved (cached in ingredients.json), and it places each name
-// it hasn't met before in the rulebook, ingredients.yaml (aliases, kinds, swaps), which you can edit.
+// it hasn't met before in the rulebook, ingredients.yaml (aliases, kinds, swaps), which you can edit. It also notes,
+// once per name, whether you could make the ingredient from others (ketchup from tomato paste, vinegar and sugar).
 // Matching and ranking are lookups in those two files, so `cook` only asks Claude about words it's never seen.
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { join } from "@std/path";
@@ -57,17 +58,40 @@ swaps_with: known or new names it can stand in for, and that can stand in for it
 
 Keep each name exactly as given.`;
 
+const Makes = z.object({
+  names: z.array(z.object({
+    name: z.string(),
+    ways: z.array(z.object({
+      from: z.array(z.string()).describe('The components; "x or y" in one when either works'),
+      how: z.string(),
+    })),
+  })).describe("One entry per ingredient asked about"),
+});
+
+const MAKES_SYSTEM = `For each ingredient, say how a home cook who doesn't have it could make a stand-in from other ingredients.
+
+Only when that's a common, reliable kitchen fix: sauces and condiments (ketchup from tomato paste, vinegar and sugar), spice blends (garam masala, taco seasoning), dairy (buttermilk from milk and lemon juice), baking (self-raising flour, brown sugar, cake flour) and simple preparations (breadcrumbs from bread, oat flour from oats). Most ingredients get no ways: fresh produce, meat, fish, grains, beans, single spices, eggs, anything that can't really be made at home, and anything whose components are harder to find than it is. Using one other ingredient instead (feta for goat cheese) is a swap, not a way to make it.
+
+from: each component as a plain lowercase name, reusing names from the list in use when they fit; "x or y" in one component when either works. Leave out salt and water unless they're the point.
+
+how: one short line with amounts for a stated amount of the ingredient, e.g. "1 cup milk + 1 tbsp lemon juice, stand 5 min (makes 1 cup)". At most two ways, the most common first.
+
+Keep each name exactly as given.`;
+
 // Bump when every recipe's ingredients should be read again.
 const INDEX_VERSION = 1;
 // Recipes read at once when building the index.
 const CONCURRENCY = 6;
 // New names placed per call. One call at a time, so each sees what the last one added.
 const PLACE_BATCH = 60;
+// Names asked "how would you make this?" per call. These can run at once: no answer depends on another.
+const MAKES_BATCH = 60;
 
 interface IndexFile {
   version: number;
   recipes: Record<string, { hash: string; ingredients: Ingredient[] }>; // by recipe id (file path if it has none)
   placed: string[]; // names Claude has placed in the rulebook; never asked about again, even if you delete their rules
+  askedMakes: string[]; // names Claude has been asked how to make, ways or not; likewise never asked again
 }
 
 const indexFile = () => join(paths.state, "ingredients.json");
@@ -84,9 +108,9 @@ async function sha1(text: string): Promise<string> {
 async function loadIndex(): Promise<IndexFile> {
   try {
     const index: IndexFile = JSON.parse(await Deno.readTextFile(indexFile()));
-    if (index.version === INDEX_VERSION) return { ...index, placed: index.placed ?? [] };
+    if (index.version === INDEX_VERSION) return { ...index, placed: index.placed ?? [], askedMakes: index.askedMakes ?? [] };
   } catch { /* missing or unreadable: rebuild */ }
-  return { version: INDEX_VERSION, recipes: {}, placed: [] };
+  return { version: INDEX_VERSION, recipes: {}, placed: [], askedMakes: [] };
 }
 
 const saveIndex = (index: IndexFile) => writeAtomic(indexFile(), JSON.stringify(index));
@@ -131,6 +155,43 @@ async function place(names: string[], doc: Document, index: IndexFile): Promise<
     await saveIndex(index);
   }
   return out;
+}
+
+/**
+ * Asks Claude how to make each of these names from others, adding any ways to the rulebook for names that have none
+ * yet. Returns the names it found ways for.
+ */
+async function learnMakes(names: string[], doc: Document, index: IndexFile): Promise<string[]> {
+  const inUse = [...new Set([...recipeNames(index), ...ruleNames(rulesOf(doc))])].sort().join("\n");
+  const batches = [];
+  for (let i = 0; i < names.length; i += MAKES_BATCH) batches.push(names.slice(i, i + MAKES_BATCH));
+  const found: string[] = [];
+  for (let i = 0; i < batches.length; i += CONCURRENCY) {
+    await Promise.all(batches.slice(i, i + CONCURRENCY).map(async (batch) => {
+      const { names: answers } = await ask(
+        Makes,
+        MAKES_SYSTEM,
+        `<names_in_use>\n${inUse}\n</names_in_use>\n\nIngredients:\n${batch.join("\n")}`,
+      );
+      for (const a of answers) {
+        const name = norm(a.name);
+        if (!batch.includes(name) || !a.ways.length || rulesOf(doc).makes.has(name)) continue;
+        doc.setIn(["makes", name], doc.createNode(a.ways.map((w) => ({ from: w.from.map(norm), how: w.how }))));
+        found.push(name);
+      }
+      index.askedMakes = [...new Set([...index.askedMakes, ...batch])];
+    }));
+    await saveRules(doc);
+    await saveIndex(index);
+  }
+  return found;
+}
+
+/** Recipe names nobody has asked how to make yet, under the names the rules use. */
+function unaskedMakes(doc: Document, index: IndexFile): string[] {
+  const m = matcherFor(doc, index);
+  const asked = new Set([...index.askedMakes, ...[...rulesOf(doc).makes.keys()].map((n) => m.canon(n))]);
+  return [...new Set([...recipeNames(index)].map((n) => m.canon(n)))].filter((n) => !asked.has(n));
 }
 
 // ---- Reading recipes ----
@@ -198,6 +259,13 @@ async function prepare(say: (msg: string) => void) {
     say(`Adding ${unplaced.length} new ingredient name${unplaced.length === 1 ? "" : "s"} to ${rulesFile()}…`);
     await place(unplaced, doc, index);
   }
+  // Also how to make each name from others. The first time, that's every name in your recipes.
+  const unasked = unaskedMakes(doc, index);
+  if (unasked.length) {
+    say(`Checking which of ${unasked.length} ingredient${unasked.length === 1 ? "" : "s"} you could make from others…`);
+    const found = await learnMakes(unasked, doc, index);
+    if (found.length) say(`  added ways to make ${found.join(", ")}`);
+  }
   return { index, doc, recipes };
 }
 
@@ -224,7 +292,8 @@ function describe(p: Placement): string {
 
 export interface CookMatch {
   recipe: SavedRecipe;
-  uses: string[]; // your ingredients it uses, in the order you gave them: "kale", or "kabocha for butternut squash"
+  count: number; // how many of your ingredients it uses
+  uses: string[]; // how: "kale", "kabocha for butternut squash", "tomato paste + vinegar to make ketchup"
   missing: string[]; // what else it needs, leaving out staples, your pantry and optional extras
 }
 
@@ -244,9 +313,25 @@ export async function whatToCook(have: string[], pantry: string[], say: (msg: st
 
   const wanted = [...new Set(have.map((t) => m.canon(t)))];
   const stocked = pantry.map((t) => m.canon(t));
+  // Staples as the recipes mark them (salt, oil, spices), so a way to make something can count on them.
+  const staples = new Set(
+    Object.values(index.recipes).flatMap((r) => r.ingredients.filter((i) => i.staple).flatMap((i) => i.options.map((o) => m.canon(o)))),
+  );
+  /** Which of your ingredients covers this component: a name, "" for your pantry or a staple, undefined if nothing does. */
+  const cover = (c: string) =>
+    wanted.find((t) => m.relation(t, c)) ?? (staples.has(c) || stocked.some((p) => m.relation(p, c) === "same") ? "" : undefined);
+  /** A way to make one of `needs` from what you have, and which of your ingredients it takes. */
+  const makeable = (needs: string[]) => {
+    for (const need of needs) {
+      for (const { way } of m.ways(need)) {
+        const covered = way.from.map((options) => options.map((o) => cover(m.canon(o))).find((c) => c !== undefined));
+        if (covered.every((c) => c !== undefined)) return { need, terms: [...new Set(covered.filter(Boolean) as string[])] };
+      }
+    }
+  };
   const out: CookMatch[] = [];
   for (const recipe of recipes) {
-    const used = new Map<string, string>(); // your ingredient -> how it's used
+    const used = new Map<string, string>(); // your ingredient -> how it's used ("" when another label covers it)
     const missing = new Set<string>();
     for (const ing of index.recipes[keyOf(recipe)]?.ingredients ?? []) {
       const needs = ing.options.map((o) => m.canon(o));
@@ -261,15 +346,27 @@ export async function whatToCook(have: string[], pantry: string[], say: (msg: st
         continue;
       }
       const inPantry = stocked.some((p) => needs.some((n) => m.relation(p, n) === "same"));
-      if (!ing.staple && !ing.optional && !inPantry) missing.add(ing.options.join(" or "));
+      if (ing.staple || ing.optional || inPantry) continue;
+      const made = makeable(needs);
+      if (!made) {
+        missing.add(ing.options.join(" or "));
+        continue;
+      }
+      // Made from your pantry and staples alone: not missing, but none of your ingredients to credit.
+      made.terms.forEach((t, i) => {
+        if (!used.has(t)) used.set(t, i ? "" : `${made.terms.join(" + ")} to make ${made.need}`);
+      });
     }
-    if (used.size) out.push({ recipe, uses: wanted.filter((t) => used.has(t)).map((t) => used.get(t)!), missing: [...missing] });
+    if (used.size) {
+      const uses = wanted.filter((t) => used.get(t)).map((t) => used.get(t)!);
+      out.push({ recipe, count: used.size, uses, missing: [...missing] });
+    }
   }
   // Stable sort, so ties stay newest first.
-  return out.sort((a, b) => b.uses.length - a.uses.length || a.missing.length - b.missing.length);
+  return out.sort((a, b) => b.count - a.count || a.missing.length - b.missing.length);
 }
 
-// ---- Looking things up and editing rules by hand (`recipe-saver ingredient`; never calls Claude) ----
+// ---- Looking things up and editing rules by hand (`recipe-saver ingredient`; only `standIns` calls Claude) ----
 
 /** The rulebook and index as they stand, without reading new recipes. */
 async function current() {
@@ -290,10 +387,12 @@ export interface IngredientInfo {
   typed: string; // what you asked about, when it's an alias
   kindOf: string[]; // what it's a kind of, then what that's a kind of, …
   kinds: string[]; // what's a kind of it, or a kind of a kind of it, …
+  siblings: string[]; // the other kinds of what it's a kind of (other chili peppers, for jalapeño)
   aliases: string[]; // other names for it
   swaps: string[]; // what it swaps with, directly or through what it's a kind of
   recipes: SavedRecipe[]; // cookable recipes using it, or a kind of it, or what it's a kind of
   swapRecipes: SavedRecipe[]; // the others it could go in as a swap
+  makes: { of: string; from: string; how: string }[]; // ways to make it from others: "tomato paste, sugar or honey"
 }
 
 /** What the rulebook says about one name, and which recipes use it. Null if neither the rules nor any recipe mention it. */
@@ -311,22 +410,47 @@ export async function ingredientInfo(typed: string): Promise<IngredientInfo | nu
     typed: norm(typed),
     kindOf: m.ancestors(name).slice(1),
     kinds: m.names().filter((n) => n !== name && m.ancestors(n).includes(name)),
+    siblings: m.names().filter((n) => {
+      const parent = m.ancestors(name)[1], up = m.ancestors(n);
+      return parent !== undefined && n !== name && n !== parent && up.includes(parent) && !up.includes(name);
+    }),
     aliases: [...rules.aliases.keys()].filter((a) => a !== name && m.canon(a) === name).sort(),
     swaps: m.names().filter((n) => m.relation(n, name) === "swap"),
     recipes,
     swapRecipes: cookableRecipes.filter((r) => !recipes.includes(r) && uses(r, "swap")),
+    makes: m.ways(name).map(({ of, way }) => ({ of, from: way.from.map((c) => c.join(" or ")).join(", "), how: way.how })),
   };
+}
+
+/**
+ * What can stand in for one ingredient, for `ingredient swap <name>`. Asks Claude, once per name, about a name the
+ * rulebook has never seen and how it could be made from others; never otherwise.
+ */
+export async function standIns(typed: string, say: (msg: string) => void): Promise<IngredientInfo> {
+  const { index, doc, m } = await current();
+  if (!m.isKnown(typed)) {
+    say(`Looking up ${norm(typed)} (only needed the first time)…`);
+    for (const p of await place([norm(typed)], doc, index)) say(`  ${describe(p)}`);
+  }
+  const name = matcherFor(doc, index).canon(typed);
+  if (!index.askedMakes.includes(name) && !rulesOf(doc).makes.has(name)) {
+    say(`Checking how you could make ${name} (only needed the first time)…`);
+    await learnMakes([name], doc, index);
+  }
+  return (await ingredientInfo(typed))!;
 }
 
 /** The whole rulebook, grouped: aliases and kinds by the name they point to. */
 export async function allRules() {
   const rules = rulesOf((await current()).doc);
+  const makes = [...rules.makes].sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, ways]) => ({ name, ways: ways.map((w) => ({ from: w.from.map((c) => c.join(" or ")).join(", "), how: w.how })) }));
   const byTarget = (map: Map<string, string>) => {
     const out = new Map<string, string[]>();
     for (const [from, to] of map) out.set(to, [...out.get(to) ?? [], from]);
     return [...out].sort(([a], [b]) => a.localeCompare(b)).map(([to, from]) => ({ to, from: from.sort() }));
   };
-  return { file: rulesFile(), aliases: byTarget(rules.aliases), kinds: byTarget(rules.kinds), swaps: rules.swaps };
+  return { file: rulesFile(), aliases: byTarget(rules.aliases), kinds: byTarget(rules.kinds), swaps: rules.swaps, makes };
 }
 
 /** Makes `name` another name for `target`. Returns lines to print. */
