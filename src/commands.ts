@@ -4,8 +4,11 @@ import { bin, EDITOR_APP, limits, paths } from "./config.ts";
 import { SystemicError, TransientError } from "./errors.ts";
 import { itemId } from "./ids.ts";
 import { type AddOptions, enqueue, inboxItems, pendingDownloads, URL_RE } from "./inbox.ts";
-import { type CookMatch, whatToCook } from "./ingredients.ts";
+import {
+  addAlias, addKind, addSwaps, allRules, type CookMatch, ingredientInfo, ingredientNames, removeRule, whatToCook,
+} from "./ingredients.ts";
 import { findRecipe, readRecipes, type SavedRecipe } from "./library.ts";
+import { RuleError } from "./rulebook.ts";
 import { hashtag } from "./render.ts";
 import { mask, pantry, settings } from "./settings.ts";
 import { loadState, logFile, runInProgress } from "./state.ts";
@@ -108,20 +111,22 @@ function pickerRows(recipes: SavedRecipe[]): string[] {
   });
 }
 
-/** Lets you pick a recipe with `gum filter`, one row per recipe. Undefined if you cancel. */
-async function pick(recipes: SavedRecipe[], lines: string[], header: string): Promise<SavedRecipe | undefined> {
-  const plain = lines.map((l) => l.replace(ANSI_RE, ""));
-  const child = new Deno.Command(bin.gum, {
-    args: ["filter", "--no-strip-ansi", "--header", header, "--placeholder", "Type to filter by title, tag or date…"],
-    stdin: "piped", stdout: "piped", stderr: "inherit",
-  }).spawn();
+/** Runs `gum filter` over `lines`. The chosen lines, or undefined if you cancel. */
+async function gumFilter(lines: string[], args: string[]): Promise<string[] | undefined> {
+  const child = new Deno.Command(bin.gum, { args: ["filter", ...args], stdin: "piped", stdout: "piped", stderr: "inherit" }).spawn();
   const writer = child.stdin.getWriter();
   await writer.write(new TextEncoder().encode(lines.join("\n")));
   await writer.close();
   const { success, stdout } = await child.output();
   if (!success) return; // Esc / Ctrl-C
-  const chosen = new TextDecoder().decode(stdout).replace(/\n$/, "").replace(ANSI_RE, "");
-  return recipes[plain.indexOf(chosen)];
+  return new TextDecoder().decode(stdout).split("\n").filter(Boolean);
+}
+
+/** Lets you pick a recipe with `gum filter`, one row per recipe. Undefined if you cancel. */
+async function pick(recipes: SavedRecipe[], lines: string[], header: string): Promise<SavedRecipe | undefined> {
+  const plain = lines.map((l) => l.replace(ANSI_RE, ""));
+  const chosen = await gumFilter(lines, ["--no-strip-ansi", "--header", header, "--placeholder", "Type to filter by title, tag or date…"]);
+  return chosen && recipes[plain.indexOf(chosen[0].replace(ANSI_RE, ""))];
 }
 
 const interactive = async () =>
@@ -189,15 +194,24 @@ function cookRows(matches: CookMatch[], of: number): string[] {
 }
 
 /**
- * Saved recipes that use the ingredients you have, those using the most first.
+ * Saved recipes that use the ingredients you have, those using the most first. With none given, you pick them from a list.
  * In a terminal, a `gum filter` picker that opens the chosen recipe; otherwise (or with `plain`) the whole list.
  */
 export async function cook(have: string[], plain = false) {
+  const say = (msg: string) => console.error(msg);
+  const tty = !plain && await interactive();
   let matches: CookMatch[];
   try {
-    matches = await whatToCook(have, await pantry(), (n) => {
-      console.error(`Reading the ingredients of ${n} recipe${n === 1 ? "" : "s"} (once per new or edited recipe)…`);
-    });
+    if (!have.length) {
+      if (!tty) {
+        console.error("Name the ingredients you have: recipe-saver cook kabocha, kale, chickpeas");
+        Deno.exit(2);
+      }
+      const header = "What do you have? Tab to choose each one, Enter when done";
+      have = await gumFilter(await ingredientNames(say), ["--no-limit", "--header", header, "--placeholder", "Type to filter…"]) ?? [];
+      if (!have.length) return;
+    }
+    matches = await whatToCook(have, await pantry(), say);
   } catch (e) {
     if (!(e instanceof SystemicError || e instanceof TransientError)) throw e;
     console.error(e.message);
@@ -209,7 +223,7 @@ export async function cook(have: string[], plain = false) {
     return;
   }
   const noun = matches.length === 1 ? "recipe uses" : "recipes use";
-  if (!plain && await interactive()) {
+  if (tty) {
     const chosen = await pick(matches.map((m) => m.recipe), cookRows(matches, have.length), `${matches.length} ${noun} ${asked}`);
     if (chosen) await openFile(chosen.file);
     return;
@@ -219,6 +233,101 @@ export async function cook(have: string[], plain = false) {
     console.log(`\n${score(m, have.length)}  ${m.recipe.title}${flagFor(m.recipe)}`);
     console.log(dim(`      ${cookDetails(m)}`));
   }
+}
+
+/** Ingredient names from the command line: split on commas if there are any, else one per argument. */
+export const splitNames = (args: string[]) =>
+  (args.some((a) => a.includes(",")) ? args.join(" ").split(",") : args).map((t) => t.trim()).filter(Boolean);
+
+const INGREDIENT_USAGE = `usage: recipe-saver ingredient [name]           the rulebook, or what it says about one ingredient
+       recipe-saver ingredient alias <name>, <name it's another name for>
+       recipe-saver ingredient kind <name>, <what it's a kind of>
+       recipe-saver ingredient swap <name>               what can stand in for it
+       recipe-saver ingredient swap <name>, <name>, ...
+       recipe-saver ingredient unalias|unkind|unswap <name>`;
+
+/**
+ * `recipe-saver ingredient`: shows the rulebook, or one ingredient's rules and recipes, or changes a rule.
+ * Names with spaces need commas between them (kind red onion, onion) or quotes.
+ */
+export async function ingredient(args: string[]) {
+  const [verb, ...rest] = args;
+  const one = rest.join(" ").trim();
+  const two = splitNames(rest);
+  const fail = (): never => {
+    console.error(INGREDIENT_USAGE);
+    Deno.exit(2);
+  };
+  try {
+    let lines: string[];
+    if (!args.length) return await showRules();
+    else if (verb === "alias") lines = two.length === 2 ? await addAlias(two[0], two[1]) : fail();
+    else if (verb === "kind") lines = two.length === 2 ? await addKind(two[0], two[1]) : fail();
+    else if (verb === "swap" && two.length === 1) return await showSwaps(two[0]);
+    else if (verb === "swap") lines = two.length >= 2 ? await addSwaps(two) : fail();
+    else if (verb === "unalias" || verb === "unkind" || verb === "unswap") {
+      lines = one ? await removeRule(verb.slice(2) as "alias" | "kind" | "swap", one) : fail();
+    } else return await showIngredient(args.join(" "));
+    for (const l of lines) console.log(l);
+  } catch (e) {
+    if (!(e instanceof RuleError || e instanceof SystemicError)) throw e;
+    console.error(e.message);
+    Deno.exit(1);
+  }
+}
+
+async function showIngredient(name: string) {
+  const info = await ingredientInfo(name);
+  if (!info) {
+    console.error(`Neither the rulebook nor any recipe mentions ${name}. (recipe-saver cook ${name} would look it up.)`);
+    Deno.exit(1);
+  }
+  if (info.typed !== info.name) console.log(dim(`${info.typed} is another name for ${info.name}`));
+  console.log(info.name);
+  const rows: [string, string[]][] = [
+    ["also called", info.aliases],
+    ["a kind of", info.kindOf.length ? [info.kindOf.join(", a kind of ")] : []],
+    ["kinds of it", info.kinds],
+    ["swaps with", info.swaps],
+  ];
+  for (const [label, values] of rows) if (values.length) console.log(`  ${label.padEnd(12)} ${values.join(", ")}`);
+  for (const [label, recipes] of [["recipes", info.recipes], ["as a swap", info.swapRecipes]] as const) {
+    if (!recipes.length && label === "as a swap") continue;
+    console.log(`  ${label.padEnd(12)} ${recipes.length || "none"}`);
+    for (const r of recipes) console.log(dim(`    ${r.title}`));
+  }
+}
+
+/** What you can use instead of one ingredient. */
+async function showSwaps(name: string) {
+  const info = await ingredientInfo(name);
+  if (!info) {
+    console.error(`Neither the rulebook nor any recipe mentions ${name}.`);
+    Deno.exit(1);
+  }
+  if (!info.swaps.length && !info.kinds.length && !info.kindOf.length) {
+    console.log(`Nothing in the rulebook stands in for ${info.name}. Add some: recipe-saver ingredient swap ${info.name}, <name>`);
+    return;
+  }
+  console.log(`Instead of ${info.name}, you can use:`);
+  if (info.swaps.length) console.log(`  ${"swaps".padEnd(13)} ${info.swaps.join(", ")}`);
+  if (info.kinds.length) console.log(`  ${"kinds of it".padEnd(13)} ${info.kinds.join(", ")}`);
+  if (info.kindOf.length) console.log(`  ${"more general".padEnd(13)} ${info.kindOf.join(", ")}`);
+}
+
+async function showRules() {
+  const { file, aliases, kinds, swaps } = await allRules();
+  const grouped = (title: string, rows: { to: string; from: string[] }[], arrow: string) => {
+    console.log(`\n${title} (${rows.reduce((n, r) => n + r.from.length, 0)})`);
+    const width = Math.min(Math.max(0, ...rows.map((r) => r.to.length)), 24);
+    for (const r of rows) console.log(`  ${r.to.padEnd(width)}  ${dim(arrow)} ${r.from.join(", ")}`);
+  };
+  console.log(dim(file));
+  grouped("Aliases: other names", aliases, "←");
+  grouped("Kinds", kinds, "⊃");
+  console.log(`\nSwaps (${swaps.length} groups)`);
+  for (const g of swaps) console.log(`  ${g.join(" · ")}`);
+  console.log(dim(`\nOne ingredient: recipe-saver ingredient <name>. Change a rule: recipe-saver ingredient alias|kind|swap …`));
 }
 
 async function agentLoaded(): Promise<boolean> {

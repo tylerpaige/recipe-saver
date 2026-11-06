@@ -1,0 +1,136 @@
+# How `recipe-saver cook` matches ingredients. Edit freely, here or with `recipe-saver ingredient`: Claude only ever
+# adds names it hasn't placed before and new members of swap groups, and never changes or re-adds what you've edited
+# or removed. Plurals match on their own (egg/eggs), so they don't need aliases.
+#
+# aliases: another name or spelling -> the name to use       (courgette: zucchini)
+# kinds:   an ingredient -> what it's a kind of               (red onion: onion)
+#          Having either counts as having the other.
+# swaps:   groups that stand in for each other, shown as "kabocha for butternut squash"
+
+aliases:
+  aubergine: eggplant
+  courgette: zucchini
+  coriander: cilantro
+  fresh coriander: cilantro
+  scallions: green onion
+  spring onion: green onion
+  cornflour: cornstarch
+  plain flour: all-purpose flour
+  garbanzo beans: chickpeas
+  butterbeans: butter beans
+  greek yoghurt: greek yogurt
+  vegetable stock: vegetable broth
+  chicken stock: chicken broth
+  rice vinegar: rice wine vinegar
+  miso paste: miso
+  white miso paste: white miso
+  parmesan: parmesan cheese
+  chili crisp: chile crisp
+  chilli crisp: chile crisp
+  chili flakes: chilli flakes
+  red pepper flakes: chilli flakes
+  chili oil: chilli oil
+  chili powder: chilli powder
+  cayenne pepper: cayenne
+  red bell pepper: red pepper
+  extra-firm tofu: extra firm tofu
+  extra-virgin olive oil: extra virgin olive oil
+  pomegranate arils: pomegranate seeds
+  vegan fish sauce: plant-based fish sauce
+  tortilla wraps: tortillas
+
+kinds:
+  # onions and alliums
+  red onion: onion
+  white onion: onion
+  yellow onion: onion
+  # squash
+  butternut squash: winter squash
+  honeynut squash: winter squash
+  kabocha: winter squash
+  acorn squash: winter squash
+  # beans and lentils
+  cannellini beans: white beans
+  gigante beans: white beans
+  great northern beans: white beans
+  red lentils: lentils
+  green lentils: lentils
+  beluga lentils: lentils
+  # tofu
+  firm tofu: tofu
+  extra firm tofu: tofu
+  silken tofu: tofu
+  # greens and vegetables
+  tuscan kale: kale
+  cavolo nero: kale
+  fresh spinach: spinach
+  tenderstem broccoli: broccoli
+  red cabbage: cabbage
+  purple cabbage: cabbage
+  white cabbage: cabbage
+  cherry tomatoes: tomatoes
+  grape tomatoes: tomatoes
+  red pepper: bell pepper
+  green pepper: bell pepper
+  green bell pepper: bell pepper
+  orange bell pepper: bell pepper
+  english cucumber: cucumber
+  persian cucumber: cucumber
+  globe eggplant: eggplant
+  yukon gold potatoes: potatoes
+  new potatoes: potatoes
+  waxy potatoes: potatoes
+  frozen peas: peas
+  cremini mushrooms: mushrooms
+  white mushrooms: mushrooms
+  portobello mushrooms: mushrooms
+  red chilli: chili peppers
+  jalapeño: chili peppers
+  # herbs
+  fresh basil: basil
+  thai basil: basil
+  fresh parsley: parsley
+  fresh cilantro: cilantro
+  fresh mint: mint
+  fresh dill: dill
+  fresh thyme: thyme
+  fresh chives: chives
+  fresh ginger: ginger
+  # grains, pasta, bread
+  white rice: rice
+  basmati rice: rice
+  sushi rice: rice
+  spaghetti: pasta
+  orzo: pasta
+  udon noodles: noodles
+  ramen noodles: noodles
+  sourdough bread: bread
+  panko: breadcrumbs
+  panko breadcrumbs: breadcrumbs
+  # pantry
+  white miso: miso
+  light miso: miso
+  light soy sauce: soy sauce
+  dark soy sauce: soy sauce
+  dijon mustard: mustard
+  smoked paprika: paprika
+  vegetable broth: broth
+  chicken broth: broth
+  extra virgin olive oil: olive oil
+  roasted sesame oil: sesame oil
+  white sesame seeds: sesame seeds
+  pecans: nuts
+  pistachios: nuts
+  cod: fish
+  flaky white fish: fish
+
+swaps:
+  - [butternut squash, honeynut squash, kabocha, acorn squash]
+  - [butter beans, cannellini beans, gigante beans, great northern beans]
+  - [green lentils, beluga lentils]
+  - [kale, cavolo nero, tuscan kale]
+  - [cremini mushrooms, white mushrooms, portobello mushrooms]
+  - [tomatoes, cherry tomatoes, grape tomatoes]
+  - [soy sauce, tamari]
+  - [tahini, sesame paste]
+  - [cod, flaky white fish]

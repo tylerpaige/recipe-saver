@@ -85,8 +85,7 @@ export async function run() {
     // So `cook` already knows what's in anything just saved. It catches up by itself if this fails.
     if (items.length) {
       try {
-        const read = await refreshIngredients();
-        if (read) await log(`read the ingredients of ${read} recipe${read === 1 ? "" : "s"} for cook`);
+        await refreshIngredients((msg) => log(`cook: ${msg}`));
       } catch (e) {
         await log(`couldn't read ingredients for cook: ${e instanceof Error ? e.message : e}`);
       }

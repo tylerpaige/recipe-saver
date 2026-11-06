@@ -70,7 +70,8 @@ Edit recipes freely in iA Writer: rename them, move them around the Recipes fold
 | Queue | `~/Library/Mobile Documents/iCloud~is~workflow~my~workflows/Documents/recipe-inbox/` (iCloud Drive › Shortcuts › recipe-inbox) |
 | Log, `state.json` (not-a-recipe IDs, retry counts, last error), debug data | `~/Library/Application Support/recipe-saver/` |
 | API key | Keychain, service `recipe-saver` |
-| Other settings (`pantry`), ingredient cache for `cook` | `settings.json`, `ingredients.json` in `~/Library/Application Support/recipe-saver/` |
+| `cook`'s rulebook (yours to edit; starts from `src/ingredients.default.yaml`) | `~/Library/Application Support/recipe-saver/ingredients.yaml` |
+| Other settings (`pantry`), `cook`'s cache of each recipe's ingredients | `settings.json`, `ingredients.json` in `~/Library/Application Support/recipe-saver/` |
 | Program | `~/bin/recipe-saver`, built from `src/` by `deno task compile` |
 
 Debug data (raw post info, transcripts, Claude's extractions) is kept per ID for 30 days.
@@ -135,6 +136,14 @@ deno task dev preview <url>   # run the full pipeline, print Markdown, save noth
 ~/bin/recipe-saver list --plain             # print instead, 10 per page (--page 2 for more); the default when piped
 ~/bin/recipe-saver cook kabocha, kale, chickpeas  # pick a recipe that uses what you have, most of it first
 ~/bin/recipe-saver cook "butternut squash" feta --plain  # print instead; without commas, each argument is one ingredient
+~/bin/recipe-saver cook                     # choose your ingredients from a list (Tab each one, Enter when done)
+~/bin/recipe-saver ingredient               # the rulebook cook matches by: aliases, kinds, swaps
+~/bin/recipe-saver ingredient red onion     # one ingredient: its rules, and the recipes using it (directly or as a swap)
+~/bin/recipe-saver ingredient alias courgette, zucchini   # courgette is another name for zucchini
+~/bin/recipe-saver ingredient kind red onion, onion       # red onion is a kind of onion
+~/bin/recipe-saver ingredient swap "butternut squash"     # what you can use instead of it
+~/bin/recipe-saver ingredient swap kale, chard, cavolo nero  # these stand in for each other
+~/bin/recipe-saver ingredient unalias|unkind|unswap <name>  # remove one of its rules
 ~/bin/recipe-saver open <id>                # open a saved recipe in iA Writer (a shared URL works too)
 ~/bin/recipe-saver status     # idle_no_queue | waiting_to_start | processing | error
 ~/bin/recipe-saver status <id>              # one recipe: waiting_to_start | processing | error | saved | not_recipe | not_found
@@ -156,11 +165,17 @@ After changing code: `deno task compile` (launchd runs `~/bin/recipe-saver`).
 
 `recipe-saver cook <ingredients>` ranks saved recipes by how many of your ingredients they use, then by how little else they need. Each row shows what it uses and what's missing: `2/3  Spiced Honeynut Squash Dal  kabocha for honeynut squash, onion · needs ginger, red lentils`. Quantities are ignored, and `needs-source` recipes are left out.
 
-- **Spelling and names.** `zuchini` finds courgette, and `kabocha` covers a recipe's "winter squash". A more specific kind counts as a match (your tofu is the recipe's firm tofu).
-- **Swaps count.** An ingredient you'd swap without a second thought counts, labelled so you can judge it: kabocha for butternut squash, butter beans for cannellini, kale for cavolo nero.
+- **Spelling and names.** `zuchini` finds zucchini and `aubergine` finds eggplant. Having a kind of something counts both ways: your onion covers a recipe's red onion, and your kabocha covers its "winter squash".
+- **Swaps count.** Ingredients in the same swap group count, labelled so you can judge them: kabocha for butternut squash, butter beans for cannellini, kale for cavolo nero.
 - **Pantry.** Salt, pepper, oils, sugar, flour and dried spices are never counted as missing, and neither is anything listed by `config get pantry` (garlic, onion, miso until you change it). Optional, garnish and to-serve ingredients don't count either. A staple you name yourself still counts as a match.
 
-How it works: Claude reads each recipe's Ingredients section into plain names once and caches them in `ingredients.json`. A recipe is read again only when you edit its ingredients, and `run` reads new recipes as they're saved. Each `cook` makes one Claude call to match your words to those names (~10 s); the counting and ranking is plain code.
+How it works: all matching comes from the **rulebook**, `~/Library/Application Support/recipe-saver/ingredients.yaml`. It has three sections: `aliases` (courgette → zucchini), `kinds` (red onion → onion) and `swaps` (groups like `[butternut squash, honeynut squash, kabocha]`). Fix a match you disagree with using `recipe-saver ingredient` (above), or edit the file directly. Comments you add are kept. Your rulebook starts as a copy of [`src/ingredients.default.yaml`](src/ingredients.default.yaml), a starter set of general rules built into the program. After that, the copy is yours: a newer starter never replaces it. Rules worth sharing belong in the starter. Claude only ever adds names it hasn't seen before, and new members of swap groups. It never changes or re-adds what you've edited or deleted.
+
+Claude is involved in two places, each once:
+- When a recipe is saved (or edited), Claude reads its Ingredients section into plain names, reusing names already in use. Those names are cached in `ingredients.json`, and any new ones are added to the rulebook.
+- When you type a word the rulebook doesn't know, Claude adds it and `cook` prints what it decided (`kabocha: a kind of winter squash; swaps with butternut squash, honeynut squash`).
+
+Otherwise `cook` is a plain lookup: instant, no API calls, and the same answer every time. The first `cook` after an upgrade builds everything for your whole library, which takes a few minutes.
 
 ## When something breaks
 

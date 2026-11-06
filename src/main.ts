@@ -4,6 +4,7 @@ import {
   clean,
   cook,
   getConfig,
+  ingredient,
   list,
   listConfig,
   open,
@@ -11,6 +12,7 @@ import {
   setConfig,
   showConfig,
   showLog,
+  splitNames,
   status,
   unsetConfig,
 } from "./commands.ts";
@@ -55,9 +57,18 @@ const usage = `usage: recipe-saver <command>
   list [tag ...]               pick a saved recipe to open (newest first)
   list [tag ...] --plain [--page N]
                                print saved recipes, ${limits.recipesPerPage} per page (the default when piped)
-  cook <ingredient, ...> [--plain]
+  cook [ingredient, ...] [--plain]
                                pick a recipe using what you have, most of it first; separate with
-                               commas, or quote each one ("butternut squash" kale)
+                               commas, or quote each one ("butternut squash" kale); with none, pick
+                               them from a list
+  ingredient [name]            the rules cook matches by, or one ingredient's rules and recipes
+  ingredient alias|kind <name>, <name>
+                               courgette is another name for zucchini; red onion is a kind of onion
+  ingredient swap <name>       what can stand in for it
+  ingredient swap <name>, <name>, ...
+                               these stand in for each other
+  ingredient unalias|unkind|unswap <name>
+                               remove one of an ingredient's rules
   open <id | url>              open a saved recipe in iA Writer
   status [id | url]            app status, or one recipe's
   log [id] [--tail [N]]        the log; --tail shows the last N lines (default 20)
@@ -75,12 +86,13 @@ const pageNo = positiveInt(flags.page, 1);
 const autoTag = bool(flags["auto-tag"], true);
 const tags = typeof flags.tag === "string" ? flags.tag.split(",").map((t) => t.trim()).filter(Boolean) : [];
 // `cook kabocha, kale` splits on commas; without any, each argument is one ingredient.
-const have = (rest.some((a) => a.includes(",")) ? rest.join(" ").split(",") : rest).map((t) => t.trim()).filter(Boolean);
+const have = splitNames(rest);
 const tail = flags.tail === undefined ? undefined : positiveInt(flags.tail, 20);
 if (cmd === "run") await run();
 else if (cmd === "queue") await queue();
 else if (cmd === "list" && pageNo) await list(rest, pageNo, flags.plain === true || flags.page !== undefined);
-else if (cmd === "cook" && have.length) await cook(have, flags.plain === true);
+else if (cmd === "ingredient") await ingredient(rest);
+else if (cmd === "cook") await cook(have, flags.plain === true);
 else if (cmd === "open" && rest.length === 1) await open(rest[0]);
 else if (cmd === "status" && rest.length <= 1) await status(rest[0]);
 else if (cmd === "log" && rest.length <= 1 && tail !== null) await showLog(rest[0], tail);

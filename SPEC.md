@@ -73,10 +73,13 @@ Rules:
 
 ## Cooking from what you have (`cook`)
 
-- Input: a list of ingredients you have; quantities ignored. Output: saved recipes (not `needs-source`) using at least one, ranked by how many they use, then fewest other ingredients still needed, then newest.
-- Index: Claude reads each recipe's `## Ingredients` section (the file, so hand edits count) into `{options, staple, optional}` per line; "X or Y" lines have several options. Cached in `ingredients.json` by recipe `id` and a hash of the section; `run` refreshes it after saving.
-- Query: one Claude call maps each of your terms, and each pantry item, onto the index's names: the same ingredient (spelling, plurals, regional names, more general or more specific names) or a no-second-thought substitute. Exact names are matched in code too.
-- Missing = not matched, not a staple, not optional, not in your pantry (`config set pantry`; default garlic, onion, miso). Substitutes count fully and are shown as "kabocha for butternut squash".
+- Input: a list of ingredients you have (or chosen from a list); quantities ignored. Output: saved recipes (not `needs-source`) using at least one, ranked by how many they use, then fewest other ingredients still needed, then newest.
+- No AI at query time, except once for a word never seen before. Claude's two jobs, each done once:
+  - **Index** (on save, or when a recipe's `## Ingredients` section changes): each line becomes `{options, staple, optional}`, reusing names already in use. Cached in `ingredients.json` by recipe `id` and a hash of the section.
+  - **Rulebook** (`ingredients.yaml`, hand-editable; starts as a copy of the bundled `src/ingredients.default.yaml` and is never replaced by later versions of it): every new name is placed as an alias (courgette → zucchini, typos included), a kind (red onion → onion) and/or a member of a swap group. Claude only adds; names it has placed are recorded in `ingredients.json` so deleted rules aren't re-added. Names that already have a rule aren't sent to Claude.
+- `recipe-saver ingredient` reads the rulebook (all of it, or one name with its recipes) and edits it (alias, kind, swap and their un- forms), refusing loops. Hand edits mark the name as placed, so Claude never revisits it. No Claude calls.
+- Matching: names are lowercased, aliases followed, and singular/plural folded. Having X covers a recipe's Y when one is the other or a kind of it (either direction). It's a labelled swap when they share a swap group.
+- Missing = not matched, not a staple, not optional, not in your pantry (`config set pantry`; default garlic, onion, miso). Substitutes count fully.
 
 ## Operations
 
