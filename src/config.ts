@@ -15,7 +15,9 @@ export const paths = {
   waterfoxProfiles: join(HOME, "Library/Application Support/Waterfox/Profiles"),
 };
 
-export const MODEL = "claude-haiku-4-5";
+export const MODEL = "claude-haiku-5-5";
+// How much Claude thinks before answering (it's billed as output). "low" is cheaper but more likely to skip a search.
+export const EFFORT = "medium";
 export const KEYCHAIN_SERVICE = "recipe-saver";
 
 export const limits = {

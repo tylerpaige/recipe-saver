@@ -17,7 +17,7 @@ Archive recipes from Instagram Reels (and carousels, and plain recipe URLs) as p
 
 ## Pipeline (tiered; stop as soon as the recipe is complete)
 
-1. **Caption** — `yt-dlp --skip-download --dump-json` → caption + uploader. One Claude Haiku 4.5 call with a strict JSON schema. Includes an `is_recipe` check (non-recipes are skipped and logged).
+1. **Caption** — `yt-dlp --skip-download --dump-json` → caption + uploader. One Claude Haiku 5.5 call with a strict JSON schema. Includes an `is_recipe` check (non-recipes are skipped and logged).
 2. **Recipe page** — URL in the caption (or the shared item itself is a URL) → parse schema.org `Recipe` JSON-LD. If no URL, web-search "creator + dish title". Normalize through the same LLM extraction for formatting/conversions.
 3. **Media** — download video (or carousel images). Audio → whisper.cpp `small.en`. 6–10 frames via ffmpeg scene detection (or carousel slides) sent directly to Claude as images (no OCR). Delete media afterwards.
 4. **Give up gracefully** — write the file anyway with `status: needs-source` and a one-line reason.

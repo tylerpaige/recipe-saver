@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import { encodeBase64 } from "@std/encoding/base64";
-import { KEYCHAIN_SERVICE, MODEL } from "./config.ts";
+import { EFFORT, KEYCHAIN_SERVICE, MODEL } from "./config.ts";
 import { anthropicApiKey } from "./settings.ts";
 import { SystemicError, TransientError } from "./errors.ts";
 
@@ -132,12 +132,16 @@ export async function extract(s: Signals): Promise<Recipe> {
   try {
     const response = await (await getClient()).messages.parse({
       model: MODEL,
-      max_tokens: 8000,
+      // Thinking counts toward this too.
+      max_tokens: 16000,
       system: SYSTEM,
       messages: [{ role: "user", content }],
-      output_config: { format: zodOutputFormat(Recipe) },
+      output_config: { format: zodOutputFormat(Recipe), effort: EFFORT },
     });
-    if (response.stop_reason === "refusal" || !response.parsed_output) {
+    if (response.stop_reason === "refusal") {
+      throw new TransientError(`Claude declined to extract this (${response.stop_details?.category ?? "no category"})`);
+    }
+    if (!response.parsed_output) {
       throw new TransientError(`Extraction returned no result (stop_reason: ${response.stop_reason})`);
     }
     return response.parsed_output;
@@ -151,11 +155,13 @@ export async function searchRecipeUrl(creator: string | null, title: string, cap
   try {
     const response = await (await getClient()).messages.create({
       model: MODEL,
-      max_tokens: 2000,
+      max_tokens: 8000,
+      output_config: { effort: EFFORT },
       tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }],
       messages: [{
         role: "user",
-        content: `Find the web page with the full written recipe for "${title}" by the Instagram creator ${creator ?? "(unknown)"}. ` +
+        content: `The current date is ${new Date().toISOString().slice(0, 10)}. ` +
+          `Find the web page with the full written recipe for "${title}" by the Instagram creator ${creator ?? "(unknown)"}. ` +
           `It's usually on their blog, Substack, or website. Their caption for context:\n<caption>\n${caption}\n</caption>\n\n` +
           `Only accept a page that is clearly this creator's recipe for this dish. ` +
           `End your answer with a final line "URL: <url>", or "URL: none" if you can't find it.`,
