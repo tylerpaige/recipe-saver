@@ -104,11 +104,13 @@ brew install yt-dlp ffmpeg whisper-cpp
 curl -L -o ~/Library/Application\ Support/recipe-saver/models/ggml-small.en.bin \
   https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin
 
-# Anthropic API key in Keychain
-security add-generic-password -s recipe-saver -a anthropic -w
-
-# build + launchd agent
+# build
 deno task compile
+
+# Anthropic API key (asks for it, hidden; stored in Keychain)
+~/bin/recipe-saver config set anthropic-api-key
+
+# launchd agent
 
 cp launchd/local.recipe-saver.plist ~/Library/LaunchAgents/
 
@@ -136,6 +138,11 @@ deno task dev preview <url>   # run the full pipeline, print Markdown, save noth
 ~/bin/recipe-saver log --tail 50            # last 50 log lines (bare --tail: 20)
 ~/bin/recipe-saver log <id>                 # everything logged about one recipe
 ~/bin/recipe-saver clean                    # clear the logs
+~/bin/recipe-saver config                   # show settings (secrets masked)
+~/bin/recipe-saver config list              # the settings you can change, and what each is for
+~/bin/recipe-saver config get anthropic-api-key --reveal  # print one setting (secrets masked without --reveal)
+~/bin/recipe-saver config unset anthropic-api-key        # remove it from Keychain
+~/bin/recipe-saver config set anthropic-api-key  # replace the API key: asks for it, checks it with Anthropic, saves to Keychain
 ~/bin/recipe-saver run        # drain the inbox now (launchd does this automatically)
 ```
 
@@ -145,6 +152,7 @@ After changing code: `deno task compile` (launchd runs `~/bin/recipe-saver`).
 
 - **Notification "Instagram refused the request"**: open Waterfox and log into Instagram. Items stay queued and retry automatically.
 - **Notification "yt-dlp failed"**: `brew upgrade yt-dlp`. This is the main recurring maintenance.
+- **Notification "The Anthropic API key was rejected"**: `recipe-saver config set anthropic-api-key` with a new key.
 - **Is it working?** `recipe-saver status`, then `recipe-saver log --tail` or `recipe-saver log <id>`.
 - **Log file**: `~/Library/Application Support/recipe-saver/recipe-saver.log`
 - **What Claude saw for one reel**: `~/Library/Application Support/recipe-saver/debug/<id>/` (kept 30 days)

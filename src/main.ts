@@ -1,5 +1,18 @@
 import { limits } from "./config.ts";
-import { add, clean, list, open, queue, showLog, status } from "./commands.ts";
+import {
+  add,
+  clean,
+  getConfig,
+  list,
+  listConfig,
+  open,
+  queue,
+  setConfig,
+  showConfig,
+  showLog,
+  status,
+  unsetConfig,
+} from "./commands.ts";
 import { preview, run } from "./run.ts";
 
 // Flags whose value can follow as the next argument, whatever it looks like (others only take a number there).
@@ -48,7 +61,12 @@ const usage = `usage: recipe-saver <command>
   add <url> [--tag a,b] [--auto-tag=false] [-m "note"]
                                queue a URL, with your own tags; --auto-tag=false skips Claude's;
                                -m/--message adds your note under the title
-  preview <url>                run the pipeline and print the Markdown, saving nothing`;
+  preview <url>                run the pipeline and print the Markdown, saving nothing
+  config                       show settings
+  config list                  list the settings you can change
+  config get <key> [--reveal]  print one setting; secrets are masked unless --reveal
+  config set <key> [value]     change a setting; leave out the value to be asked for it (hidden for secrets)
+  config unset <key>           remove a setting`;
 const pageNo = positiveInt(flags.page, 1);
 const autoTag = bool(flags["auto-tag"], true);
 const tags = typeof flags.tag === "string" ? flags.tag.split(",").map((t) => t.trim()).filter(Boolean) : [];
@@ -64,6 +82,11 @@ else if (cmd === "add" && rest.length === 1 && flags.tag !== true && flags.messa
   await add(rest[0], { tags, autoTag, message: (flags.message || "").trim() || undefined });
 }
 else if (cmd === "preview" && arg) await preview(arg);
+else if (cmd === "config" && !rest.length) await showConfig();
+else if (cmd === "config" && rest[0] === "list" && rest.length === 1) listConfig();
+else if (cmd === "config" && rest[0] === "get" && rest.length === 2) await getConfig(rest[1], flags.reveal === true);
+else if (cmd === "config" && rest[0] === "set" && (rest.length === 2 || rest.length === 3)) await setConfig(rest[1], rest[2]);
+else if (cmd === "config" && rest[0] === "unset" && rest.length === 2) await unsetConfig(rest[1]);
 else {
   console.error(usage);
   Deno.exit(2);

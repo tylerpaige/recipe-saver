@@ -2,7 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import { encodeBase64 } from "@std/encoding/base64";
-import { bin, KEYCHAIN_SERVICE, MODEL } from "./config.ts";
+import { KEYCHAIN_SERVICE, MODEL } from "./config.ts";
+import { anthropicApiKey } from "./settings.ts";
 import { SystemicError, TransientError } from "./errors.ts";
 
 const Ingredient = z.object({
@@ -69,18 +70,11 @@ linked_urls: any URL in the source that likely leads to the full recipe.`;
 let client: Anthropic | null = null;
 
 async function apiKey(): Promise<string> {
-  const env = Deno.env.get("ANTHROPIC_API_KEY");
-  if (env) return env;
-  const out = await new Deno.Command(bin.security, {
-    args: ["find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"],
-    stdout: "piped",
-    stderr: "null",
-  }).output();
-  const key = new TextDecoder().decode(out.stdout).trim();
-  if (!out.success || !key) {
+  const key = await anthropicApiKey();
+  if (!key) {
     throw new SystemicError(
       "api-key",
-      `No Anthropic API key in Keychain (service "${KEYCHAIN_SERVICE}").`,
+      `No Anthropic API key in Keychain (service "${KEYCHAIN_SERVICE}"). Set one with: recipe-saver config set anthropic-api-key`,
     );
   }
   return key;

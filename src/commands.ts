@@ -1,10 +1,11 @@
-// The CLI commands other than `run` and `preview`. All read-only except `add` and `clean`.
+// The CLI commands other than `run` and `preview`. All read-only except `add`, `clean`, `config set` and `config unset`.
 import { join } from "@std/path";
 import { bin, EDITOR_APP, limits, paths } from "./config.ts";
 import { itemId } from "./ids.ts";
 import { type AddOptions, enqueue, inboxItems, pendingDownloads, URL_RE } from "./inbox.ts";
 import { findRecipe, readRecipes, type SavedRecipe } from "./library.ts";
 import { hashtag } from "./render.ts";
+import { mask, settings } from "./settings.ts";
 import { loadState, logFile, runInProgress } from "./state.ts";
 
 export async function add(url: string, opts: AddOptions) {
@@ -240,6 +241,82 @@ export async function clean() {
       console.log(`Cleared ${file} (${Math.ceil(size / 1024)} KB)`);
     } catch (e) {
       if (!(e instanceof Deno.errors.NotFound)) throw e;
+    }
+  }
+}
+
+/** Prints every setting, secrets masked. */
+export async function showConfig() {
+  const width = Math.max(...Object.keys(settings).map((k) => k.length));
+  for (const [key, setting] of Object.entries(settings)) {
+    const current = await setting.get();
+    const shown = current ? `${setting.secret ? mask(current.value) : current.value}  ${dim(`(${current.source})`)}` : dim("not set");
+    console.log(`${key.padEnd(width)}  ${shown}`);
+  }
+}
+
+/** Prints the settings `config set` accepts, with what each is for. */
+export function listConfig() {
+  const width = Math.max(...Object.keys(settings).map((k) => k.length));
+  for (const [key, setting] of Object.entries(settings)) console.log(`${key.padEnd(width)}  ${setting.description}`);
+}
+
+/** Sets one setting. Without a value, asks for it (hidden for secrets) or reads it from stdin when piped. */
+export async function setConfig(key: string, value?: string) {
+  const setting = findSetting(key);
+  value ??= Deno.stdin.isTerminal() ? await ask(`${setting.description}:`, setting.secret) : await new Response(Deno.stdin.readable).text();
+  value = value.trim();
+  if (!value) {
+    console.error("Nothing entered; unchanged.");
+    Deno.exit(1);
+  }
+  try {
+    const warning = await setting.set(value);
+    if (warning) console.error(warning);
+  } catch (e) {
+    console.error(e instanceof Error ? e.message : String(e));
+    Deno.exit(1);
+  }
+  console.log(`Saved ${key}${setting.secret ? ` (${mask(value)})` : ` = ${value}`}`);
+}
+
+/** Prints one setting's value, and nothing (exit 1) if it's unset. Secrets are masked unless `reveal`. */
+export async function getConfig(key: string, reveal: boolean) {
+  const setting = findSetting(key);
+  const current = await setting.get();
+  if (!current) {
+    console.error(`${key} is not set.`);
+    Deno.exit(1);
+  }
+  console.log(setting.secret && !reveal ? mask(current.value) : current.value);
+}
+
+/** Removes one setting's stored value. */
+export async function unsetConfig(key: string) {
+  const setting = findSetting(key);
+  console.log(await setting.unset() ? `Removed ${key}` : `${key} wasn't set.`);
+  const current = await setting.get();
+  if (current) console.error(`It's still set by ${current.source}.`);
+}
+
+function findSetting(key: string) {
+  const setting = settings[key];
+  if (!setting) {
+    console.error(`Unknown setting "${key}". See: recipe-saver config list`);
+    Deno.exit(2);
+  }
+  return setting;
+}
+
+async function ask(message: string, hidden: boolean): Promise<string> {
+  const stty = (arg: string) => new Deno.Command("/bin/stty", { args: [arg], stdin: "inherit" }).output();
+  if (hidden) await stty("-echo");
+  try {
+    return prompt(message) ?? "";
+  } finally {
+    if (hidden) {
+      await stty("echo");
+      console.log();
     }
   }
 }
