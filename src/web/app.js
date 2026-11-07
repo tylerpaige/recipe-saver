@@ -259,9 +259,8 @@ async function recipeView(key) {
       ${r.tags.length ? `<div class="facts">${r.tags.map((t) => `<a href="#/?q=${encodeURIComponent("#" + t)}">#${esc(t)}</a>`).join("")}</div>` : ""}
       <div class="tools">
         <button class="btn quiet" id="size">${big ? "Smaller text" : "Bigger text"}</button>
-        <button class="btn quiet" id="reset">Uncross all</button>
+        <button class="btn quiet" id="reset">Reset all markings</button>
       </div>
-      <p class="muted small" style="margin:6px 0 0">Tap an ingredient or step to cross it off.${"wakeLock" in navigator ? " The screen stays on while a recipe is open." : ""}</p>
       <div class="body">${r.html}</div>
       <nav class="jump">
         <button data-jump="ingredients">Ingredients</button>
