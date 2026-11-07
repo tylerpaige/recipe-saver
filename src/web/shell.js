@@ -35,12 +35,44 @@ function sectionOf(hash) {
   return first === "r" || !first ? "recipes" : first;
 }
 
-let panes = []; // { el, iframe, hash, palette }
+let panes = []; // { el, iframe, hash, palette, back, forward, going }
 let active = 0;
 let ratio = 0.5; // the first frame's share of the space when split
 
+const HISTORY = 50; // pages kept per frame for Back
+
 function save() {
-  store.set("panes", { hashes: panes.map((p) => p.hash), active, ratio });
+  const histories = panes.map((p) => ({ back: p.back.slice(-HISTORY), forward: p.forward.slice(-HISTORY) }));
+  store.set("panes", { hashes: panes.map((p) => p.hash), histories, active, ratio });
+}
+
+/**
+ * Back and Forward for one frame. Each frame keeps its own list: iOS gives the page and its frames one shared
+ * history, so the browser's own back could undo a step taken in the other frame. Moves are made with
+ * location.replace, adding nothing to that shared history.
+ */
+function go(pane, dir) {
+  const [from, to] = dir === "back" ? [pane.back, pane.forward] : [pane.forward, pane.back];
+  let target = from.pop();
+  while (target === pane.hash) target = from.pop(); // the page itself, after a search was cleared
+  if (target === undefined) return;
+  to.push(pane.hash);
+  pane.going = target;
+  const w = pane.iframe.contentWindow;
+  w.location.replace(w.location.pathname + target);
+  save();
+  draw();
+}
+
+/** A frame moved to another page by a link or tab (not Back or Forward): remember where it was. */
+function moved(pane, hash) {
+  if (pane.going === hash) {
+    pane.going = null;
+    return;
+  }
+  pane.going = null;
+  pane.back.push(pane.hash);
+  pane.forward = [];
 }
 
 function draw() {
@@ -56,13 +88,15 @@ function draw() {
     p.iframe.contentDocument?.body?.classList.toggle("inactive", split && i !== active);
     const section = sectionOf(p.hash);
     p.el.querySelectorAll("[data-nav]").forEach((b) => b.classList.toggle("on", b.dataset.nav === section));
+    p.el.querySelector('[data-hist="back"]').disabled = !p.back.length;
+    p.el.querySelector('[data-hist="forward"]').disabled = !p.forward.length;
     const end = p.el.querySelector(".end");
     end.textContent = split ? "×" : "Split";
     end.setAttribute("aria-label", split ? "Close this frame" : "Split into two frames");
   });
 }
 
-function addPane(hash) {
+function addPane(hash, history = {}) {
   const palette = pickPalette(panes[0]?.palette);
   const el = document.createElement("section");
   el.className = "pane";
@@ -74,6 +108,8 @@ function addPane(hash) {
       <button data-go="#/swap" data-nav="swap">Swaps</button>
     </nav>
     <span class="strip-space"></span>
+    <button class="hist" data-hist="back" aria-label="Back">←</button>
+    <button class="hist" data-hist="forward" aria-label="Forward">→</button>
     <button class="end"></button>
   </div>`;
   const iframe = document.createElement("iframe");
@@ -82,10 +118,12 @@ function addPane(hash) {
   iframe.dataset.palette = String(palette); // frame.html reads it before drawing anything
   iframe.addEventListener("load", draw);
   el.append(iframe);
-  const pane = { el, iframe, hash, palette };
+  const list = (xs) => (Array.isArray(xs) ? xs.filter((h) => typeof h === "string" && h.startsWith("#")) : []);
+  const pane = { el, iframe, hash, palette, back: list(history.back), forward: list(history.forward), going: null };
   el.querySelector(".strip").addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (b?.classList.contains("end")) panes.length > 1 ? closePane(pane) : splitPane(pane);
+    else if (b?.dataset.hist) go(pane, b.dataset.hist);
     else if (b) iframe.contentWindow.location.hash = b.dataset.go;
     else focusPane(pane);
   });
@@ -168,7 +206,10 @@ addEventListener("message", (e) => {
   const pane = panes.find((p) => p.iframe.contentWindow === e.source);
   if (!pane) return;
   if (e.data?.type === "route") pane.hash = e.data.hash;
-  else if (e.data?.type === "navigated") recolor(pane);
+  else if (e.data?.type === "navigated") {
+    moved(pane, e.data.hash);
+    recolor(pane);
+  }
   else if (e.data?.type === "refresh") return void refresh();
   else if (e.data?.type === "focus") {
     active = panes.indexOf(pane);
@@ -182,12 +223,14 @@ addEventListener("message", (e) => {
   const saved = store.get("panes", null);
   const valid = (h) => typeof h === "string" && h.startsWith("#");
   let hashes = Array.isArray(saved?.hashes) ? saved.hashes.filter(valid).slice(0, MAX_PANES) : [];
+  let histories = Array.isArray(saved?.histories) ? saved.histories : [];
   if (location.hash.length > 1) {
     hashes = [location.hash];
+    histories = [];
     history.replaceState(null, "", "/");
   }
   if (!hashes.length) hashes = ["#/"];
-  hashes.forEach(addPane);
+  hashes.forEach((h, i) => addPane(h, histories[i] ?? {}));
   active = Math.min(Math.max(0, Number(saved?.active) || 0), panes.length - 1);
   if (Number(saved?.ratio) > 0 && Number(saved?.ratio) < 1) ratio = Number(saved.ratio);
   draw();

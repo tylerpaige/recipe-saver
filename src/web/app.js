@@ -458,7 +458,7 @@ async function route() {
 
 // Moving to another page (a link, a tab, Back) gives the frame new colours; the outer page picks them.
 addEventListener("hashchange", () => {
-  if (framed) parent.postMessage({ type: "navigated" }, location.origin);
+  if (framed) parent.postMessage({ type: "navigated", hash: location.hash || "#/" }, location.origin);
   else document.documentElement.dataset.palette = String((Number(document.documentElement.dataset.palette) + 1 + Math.floor(Math.random() * 3)) % 4);
   route();
 });
