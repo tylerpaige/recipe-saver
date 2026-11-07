@@ -18,6 +18,7 @@ import {
   unsetConfig,
 } from "./commands.ts";
 import { preview, run } from "./run.ts";
+import { DEFAULT_PORT, serve } from "./serve.ts";
 
 // Flags whose value can follow as the next argument, whatever it looks like (others only take a number there).
 const VALUED = new Set(["tag", "auto-tag", "message"]);
@@ -81,6 +82,7 @@ const usage = `usage: recipe-saver <command>
                                queue a URL, with your own tags; --auto-tag=false skips Claude's;
                                -m/--message adds your note under the title
   preview <url>                run the pipeline and print the Markdown, saving nothing
+  serve [--port N]             the kitchen website, on localhost (default port ${DEFAULT_PORT})
   config                       show settings
   config list                  list the settings you can change
   config get <key> [--reveal]  print one setting; secrets are masked unless --reveal
@@ -91,6 +93,7 @@ const autoTag = bool(flags["auto-tag"], true);
 const tags = typeof flags.tag === "string" ? flags.tag.split(",").map((t) => t.trim()).filter(Boolean) : [];
 // `cook kabocha, kale` splits on commas; without any, each argument is one ingredient.
 const have = splitNames(rest);
+const port = positiveInt(flags.port, DEFAULT_PORT);
 const tail = flags.tail === undefined ? undefined : positiveInt(flags.tail, 20);
 if (cmd === "run") await run();
 else if (cmd === "queue") await queue();
@@ -106,6 +109,7 @@ else if (cmd === "add" && rest.length === 1 && flags.tag !== true && flags.messa
   await add(rest[0], { tags, autoTag, message: (flags.message || "").trim() || undefined });
 }
 else if (cmd === "preview" && arg) await preview(arg);
+else if (cmd === "serve" && !rest.length && port) serve(port);
 else if (cmd === "config" && !rest.length) await showConfig();
 else if (cmd === "config" && rest[0] === "list" && rest.length === 1) listConfig();
 else if (cmd === "config" && rest[0] === "get" && rest.length === 2) await getConfig(rest[1], flags.reveal === true);

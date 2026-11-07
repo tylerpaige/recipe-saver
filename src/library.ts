@@ -13,7 +13,7 @@ export interface SavedRecipe {
   ingredients: string; // the "## Ingredients" section as written, sub-headings included; "" if there isn't one
 }
 
-const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---/;
+export const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---/;
 // From "## Ingredients" up to the next "## " heading or the end of the file.
 const INGREDIENTS_RE = /^## Ingredients[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m;
 // A #tag at the start of a line or after whitespace; "# Heading" and URL #fragments don't match.

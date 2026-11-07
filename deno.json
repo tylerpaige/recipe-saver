@@ -6,6 +6,7 @@
   },
   "imports": {
     "@anthropic-ai/sdk": "npm:@anthropic-ai/sdk@^1",
+    "marked": "npm:marked@^18.1.3",
     "zod": "npm:zod@^4",
     "yaml": "npm:yaml@^2",
     "@std/path": "jsr:@std/path@^1",

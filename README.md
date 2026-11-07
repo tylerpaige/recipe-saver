@@ -73,6 +73,7 @@ Edit recipes freely in iA Writer: rename them, move them around the Recipes fold
 | `cook`'s rulebook (yours to edit; starts from `src/ingredients.default.yaml`) | `~/Library/Application Support/recipe-saver/ingredients.yaml` |
 | Other settings (`pantry`), `cook`'s cache of each recipe's ingredients | `settings.json`, `ingredients.json` in `~/Library/Application Support/recipe-saver/` |
 | Program | `~/bin/recipe-saver`, built from `src/` by `deno task compile` |
+| Kitchen website | `src/serve.ts` and `src/web/`, bundled into the program; its log is `serve.log` in `~/Library/Application Support/recipe-saver/` |
 
 Debug data (raw post info, transcripts, Claude's extractions) is kept per ID for 30 days.
 
@@ -158,6 +159,7 @@ deno task dev preview <url>   # run the full pipeline, print Markdown, save noth
 ~/bin/recipe-saver pantry                   # what cook assumes you always have (garlic, onion, miso to start)
 ~/bin/recipe-saver pantry add soy sauce, ginger   # and pantry remove …
 ~/bin/recipe-saver run        # drain the inbox now (launchd does this automatically)
+~/bin/recipe-saver serve      # the kitchen website on http://localhost:8787 (--port N for another); launchd keeps it running
 ```
 
 After changing code: `deno task compile` (launchd runs `~/bin/recipe-saver`).
@@ -180,6 +182,27 @@ Claude is involved in two places, each once:
 
 Otherwise `cook` is a plain lookup: instant, no API calls, and the same answer every time. The first `cook` after an upgrade builds everything for your whole library, which takes a few minutes.
 
+## Kitchen website
+
+Your recipes on the iPhone and iPad, as a home-screen app: search and filter by tag, a reader with big type where you tap ingredients and steps to cross them off and the screen stays on, **Cook** (the same as `recipe-saver cook`) and **Swaps** (the same as `ingredient swap`). It only reads. You still write and edit recipes on the Mac.
+
+It's served by the Mac (`recipe-saver serve`, on localhost only) and reached through [Tailscale](https://tailscale.com), so nothing is on the public internet. It reads the Recipes folder on every visit, so iA Writer edits show up right away. The phone keeps a copy of every recipe, so they still open when the Mac is asleep or the kitchen Wi-Fi drops, with a note saying when that copy is from. Cook and Swaps need the Mac awake. As in the terminal, a word they've never seen asks Claude once.
+
+Setup, once:
+
+```sh
+# 1. the server (launchd keeps it running and restarts it after a reboot)
+cp launchd/local.recipe-saver.serve.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.recipe-saver.serve.plist
+```
+
+2. Install Tailscale on the Mac, iPhone and iPad, and sign in to the same account on each.
+3. In the Tailscale admin console under **DNS**, turn on **MagicDNS** and **HTTPS Certificates**. iOS only keeps the offline copy for an HTTPS site.
+4. On the Mac: `tailscale serve --bg 8787`. With the App Store app, the command is `/Applications/Tailscale.app/Contents/MacOS/Tailscale`. It prints the address, something like `https://your-mac.tail1234.ts.net`, which only your own devices can open. It stays set up across restarts.
+5. On each iPhone or iPad, open that address in Safari, then **Share → Add to Home Screen**.
+
+After changing the website's code, run `deno task compile`, then `launchctl kickstart -k gui/$(id -u)/local.recipe-saver.serve`. Phones pick up the new version the next time they open it with the Mac reachable.
+
 ## When something breaks
 
 - **Notification "Instagram refused the request"**: open Waterfox and log into Instagram. Items stay queued and retry automatically.
@@ -190,3 +213,4 @@ Otherwise `cook` is a plain lookup: instant, no API calls, and the same answer e
 - **What Claude saw for one reel**: `~/Library/Application Support/recipe-saver/debug/<id>/` (kept 30 days)
 - **Re-process a recipe**: delete its file from the Recipes folder, then share it again (or `recipe-saver add <url>`). For a post that was found not to be a recipe, remove its ID from `notRecipes` in `state.json` first.
 - **Stop it**: `launchctl bootout gui/$(id -u)/local.recipe-saver`
+- **Kitchen website won't load**: is the Mac awake and on Tailscale? `curl localhost:8787` on the Mac should answer. If not, see `serve.log`. Stop it with `launchctl bootout gui/$(id -u)/local.recipe-saver.serve`.

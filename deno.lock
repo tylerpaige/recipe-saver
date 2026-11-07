@@ -5,6 +5,7 @@
     "jsr:@std/internal@^1.0.14": "1.0.14",
     "jsr:@std/path@1": "1.1.6",
     "npm:@anthropic-ai/sdk@1": "1.3.0_zod@4.6.7",
+    "npm:marked@^18.1.3": "18.1.3",
     "npm:yaml@2": "2.9.1",
     "npm:zod@4": "4.6.7"
   },
@@ -55,6 +56,10 @@
         "ts-algebra"
       ]
     },
+    "marked@18.1.3": {
+      "integrity": "sha512-9ChMH8EVVgjgID49nsL6IWxWk5c6GtAsq/xw7U1ggkjkU5AGuv68oLTVlFRtvcUYZtpbNyjyvGo3YDu0fGapiw==",
+      "bin": true
+    },
     "standardwebhooks@1.1.1": {
       "integrity": "sha512-bCbX9ZEyFkWPsRz7Bl3NuQUJohmwGSev/yhr7vhaGPlc4AfIrspIRa6cPTBuI1ItmrTDJ4d/S2hCsfe4+vQGnQ==",
       "dependencies": [
@@ -78,6 +83,7 @@
       "jsr:@std/encoding@1",
       "jsr:@std/path@1",
       "npm:@anthropic-ai/sdk@1",
+      "npm:marked@^18.1.3",
       "npm:yaml@2",
       "npm:zod@4"
     ]

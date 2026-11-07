@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>local.recipe-saver.serve</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/tylerpaige/bin/recipe-saver</string>
+    <string>serve</string>
+  </array>
+  <!-- The kitchen website: always running, restarted if it stops. Localhost only; `tailscale serve` exposes it. -->
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/tylerpaige/Library/Application Support/recipe-saver/serve.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/tylerpaige/Library/Application Support/recipe-saver/serve.log</string>
+</dict>
+</plist>
