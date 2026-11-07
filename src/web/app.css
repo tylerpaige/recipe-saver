@@ -1,43 +1,18 @@
-:root {
-  --bg: #f7f3ec;
-  --surface: #fffdf8;
-  --ink: #2a2520;
-  --muted: #7a7065;
-  --line: #e4dccf;
-  --accent: #c8553d;
-  --accent-ink: #fff;
-  --chip: #efe7da;
-  --done: #a99f93;
-  --warn-bg: #fbecc8;
-  --warn-ink: #6b4c00;
-  --bad-bg: #f6d9d2;
-  --bad-ink: #7a2615;
-  --radius: 12px;
-  color-scheme: light;
+/* Two colours per frame, a background and an ink, picked from these each time a frame opens (shell.js; the count is
+   in PALETTES there and in frame.html). Everything is drawn in those two; greys are mixes of them. Rectangles with
+   hairline borders; "on" is filled with the ink. */
+:root { --bg: #000; --ink: #fff; --hair: 1px; color-scheme: dark; }
+[data-palette="0"] { --bg: #00d6f6; --ink: #005bcf; color-scheme: light; }
+[data-palette="1"] { --bg: #00510d; --ink: #fded03; color-scheme: dark; }
+[data-palette="2"] { --bg: #b1f0a0; --ink: #880749; color-scheme: dark; }
+[data-palette="3"] { --bg: #fded03; --ink: #9c2206; color-scheme: light; }
+/* Declared wherever a palette is, so they mix that palette's colours rather than inheriting the page's. */
+:root, [data-palette] {
+  --muted: color-mix(in srgb, var(--ink) 75%, var(--bg));
+  --rule: color-mix(in srgb, var(--ink) 35%, var(--bg));
+  --done: color-mix(in srgb, var(--ink) 50%, var(--bg));
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #1c1a17;
-    --surface: #25221e;
-    --ink: #ece6dc;
-    --muted: #a39887;
-    --line: #3a352e;
-    --accent: #e0775f;
-    --accent-ink: #1c1a17;
-    --chip: #322e28;
-    --done: #6f675d;
-    --warn-bg: #3d3216;
-    --warn-ink: #f0d58a;
-    --bad-bg: #42231c;
-    --bad-ink: #f3b3a3;
-    color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #1c1a17; --surface: #25221e; --ink: #ece6dc; --muted: #a39887; --line: #3a352e; --accent: #e0775f;
-  --accent-ink: #1c1a17; --chip: #322e28; --done: #6f675d; --warn-bg: #3d3216; --warn-ink: #f0d58a;
-  --bad-bg: #42231c; --bad-ink: #f3b3a3; color-scheme: dark;
-}
+@media (min-resolution: 2dppx) { :root { --hair: .5px; } }
 
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -46,92 +21,147 @@ body {
   background: var(--bg);
   color: var(--ink);
   font: 18px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  padding-bottom: env(safe-area-inset-bottom);
 }
-a { color: var(--accent); }
+a { color: var(--ink); }
 button, input { font: inherit; color: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
 
-.bar {
-  position: sticky; top: 0; z-index: 2;
-  background: color-mix(in srgb, var(--bg) 92%, transparent);
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--line);
-  padding: env(safe-area-inset-top) 16px 0;
-}
-.bar nav { display: flex; gap: 4px; max-width: 760px; margin: 0 auto; }
-.bar a {
-  flex: 1; text-align: center; padding: 12px 0; text-decoration: none; color: var(--muted);
-  font-weight: 600; font-size: 16px; border-bottom: 3px solid transparent;
-}
-.bar a.on { color: var(--ink); border-color: var(--accent); }
+/* ---- The outer page: one or two frames, each topped by a strip. The nav sits in the active frame's strip. ---- */
 
-main { max-width: 760px; margin: 0 auto; padding: 16px 16px 48px; }
+body.shell {
+  height: 100vh; height: 100dvh;
+  display: flex; flex-direction: column; overflow: hidden;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.strip button, .btn, .jump button {
+  border: var(--hair) solid var(--ink); border-radius: 0; background: var(--bg); color: var(--ink);
+  font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+/* The jump bar: edge to edge, neighbours sharing one hairline. */
+.jump button { flex: 1; height: 40px; padding: 0; font-size: 16px; }
+.jump button + button { border-left: 0; }
+.btn.on { background: var(--ink); color: var(--bg); }
+
+/* Split along the long side: stacked when tall, side by side when wide. */
+.frames { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; --split: .5; }
+@media (orientation: landscape) { .frames { flex-direction: row; } }
+.pane { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative; background: var(--bg); }
+.pane iframe { flex: 1; width: 100%; min-height: 0; border: 0; display: block; background: var(--bg); }
+.divider { display: none; }
+
+/* The strip is the same height in every frame, so switching frames moves nothing: the active one shows the nav,
+   the other its page title. */
+.strip { display: flex; align-items: flex-end; height: 44px; flex: none; padding-left: 12px; position: relative; }
+/* The baseline, drawn under the tabs so the current tab's bottom edge can cover it exactly. */
+.strip::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; border-bottom: var(--hair) solid var(--ink); }
+.strip-space { display: none; }
+
+/* Hairline tabs sitting on the strip's baseline; the current one is open at the bottom, into the page. */
+.strip nav { display: flex; gap: 6px; flex: 1; min-width: 0; }
+.strip nav button { position: relative; z-index: 1; height: 36px; padding: 0 12px; font-size: 16px; }
+.strip nav button.on { border-bottom-color: var(--bg); }
+
+/* Split (one frame) or × (two): a hairline control at the right of the strip. */
+.strip .end { align-self: center; height: 34px; margin: 0 6px 0 auto; padding: 0 12px; font-size: 16px; }
+.frames.split .strip .end { width: 34px; padding: 0; border-radius: 50%; font-size: 22px; font-weight: 400; line-height: 1; }
+
+.frames.split .pane:not(.on) .strip { align-items: stretch; padding: 0; background: var(--ink); }
+.frames.split .pane:not(.on) .strip::after { display: none; }
+.frames.split .pane:not(.on) .strip nav { display: none; }
+/* The other frame's strip: just its ×. Kept full height so switching frames moves nothing; tap anywhere on it to switch. */
+.frames.split .pane:not(.on) .strip-space { display: block; flex: 1; cursor: pointer; }
+.frames.split .pane:not(.on) .strip .end { align-self: stretch; width: 44px; height: auto; margin: 0; border: 0; border-radius: 0; background: var(--ink); color: var(--bg); }
+
+/* Each frame gets a border in its ink colour; the one you're not using goes grey, border and all. */
+.frames.split .pane { border: 5px solid var(--ink); }
+.frames.split .pane:first-of-type { flex-grow: var(--split); }
+.frames.split .pane:last-of-type { flex-grow: calc(1 - var(--split)); }
+/* The frame you're not using goes grey, so the colourful one is the one the nav drives. */
+.frames.split .pane:not(.on) { filter: grayscale(1); }
+
+/* Drag the seam between frames to resize them. */
+.frames.split .divider {
+  display: block; position: absolute; z-index: 2; touch-action: none;
+  left: 0; right: 44px; height: 16px; top: calc(var(--split) * 100% - 10px); cursor: row-resize;
+}
+@media (orientation: landscape) {
+  .frames.split .divider { top: 44px; bottom: 0; height: auto; width: 24px; left: calc(var(--split) * 100% - 12px); right: auto; cursor: col-resize; }
+}
+.frames.dragging iframe { pointer-events: none; }
+
+/* ---- A frame: one page of the app ---- */
+
+main { max-width: 760px; margin: 0 auto; padding: 16px 16px 32px; }
+/* After every page: Refresh, clear of the jump bar when there is one. */
+.foot { max-width: 760px; margin: 0 auto; padding: 0 16px 32px; }
+body:not(.inactive):has(.jump) .foot { padding-bottom: 72px; }
 .offline {
-  max-width: 760px; margin: 12px auto 0; padding: 8px 14px; border-radius: var(--radius);
-  background: var(--warn-bg); color: var(--warn-ink); font-size: 15px;
+  max-width: 760px; margin: 12px auto 0; padding: 8px 14px;
+  border: var(--hair) solid var(--ink); font-size: 15px;
 }
-@media (min-width: 792px) { .offline { margin-top: 12px; } }
 @media (max-width: 791px) { .offline { margin: 12px 16px 0; } }
 
 .muted { color: var(--muted); }
 .small { font-size: 15px; }
-.error { background: var(--bad-bg); color: var(--bad-ink); padding: 10px 14px; border-radius: var(--radius); }
+.error { border: var(--hair) solid var(--ink); padding: 10px 14px; font-weight: 600; }
 
 /* Search and inputs */
 .search { display: flex; gap: 8px; margin-bottom: 12px; }
 .search input, .field {
-  flex: 1; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius);
-  background: var(--surface); font-size: 17px;
+  flex: 1; min-width: 0; padding: 11px 12px; border: var(--hair) solid var(--ink); border-radius: 0;
+  background: var(--bg); font-size: 17px; -webkit-appearance: none; appearance: none;
 }
-.search input:focus, .field:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
-.btn {
-  border: 0; border-radius: var(--radius); padding: 12px 18px; background: var(--accent); color: var(--accent-ink);
-  font-weight: 600; cursor: pointer; white-space: nowrap;
-}
-.btn.quiet { background: var(--chip); color: var(--ink); }
-.btn:disabled { opacity: .5; }
+.search input::placeholder, .field::placeholder { color: var(--muted); }
+.search input::-webkit-search-cancel-button { display: none; } /* the Clear button does this */
+.search input:focus, .field:focus { outline: 2px solid var(--ink); outline-offset: -2px; }
+.btn { padding: 11px 16px; }
+.btn:disabled, .jump button:disabled { color: var(--done); cursor: default; } /* the hairline stays */
 
-/* Tags */
+/* Chips: the ingredients you have, on Cook */
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 16px; }
 .chip {
-  border: 0; border-radius: 999px; padding: 5px 12px; background: var(--chip); color: var(--ink); font-size: 15px;
-  cursor: pointer; text-decoration: none;
+  border: var(--hair) solid var(--ink); border-radius: 0; padding: 4px 10px; background: var(--bg); font-size: 15px;
+  cursor: pointer;
 }
-.chip.on { background: var(--accent); color: var(--accent-ink); }
-.chip .x { margin-left: 6px; opacity: .7; }
-.chip.more { background: none; color: var(--muted); text-decoration: underline; }
+.chip.on { background: var(--ink); color: var(--bg); }
+.chip .x { margin-left: 6px; }
 
 /* Lists */
 .list { list-style: none; margin: 0; padding: 0; }
-.list li { border-bottom: 1px solid var(--line); }
-.list a { display: block; padding: 14px 2px; text-decoration: none; color: var(--ink); }
+.list li { border-bottom: var(--hair) solid var(--rule); }
+.list a { display: block; padding: 14px 2px; text-decoration: none; }
 .list .title { font-weight: 600; font-size: 19px; line-height: 1.3; }
 .list .meta { color: var(--muted); font-size: 14px; margin-top: 3px; overflow-wrap: anywhere; }
-.list .score { color: var(--accent); font-weight: 700; margin-right: 8px; font-variant-numeric: tabular-nums; }
+.list .score { font-weight: 700; margin-right: 8px; font-variant-numeric: tabular-nums; }
 .badge {
-  display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; margin-left: 6px;
-  vertical-align: 2px; background: var(--warn-bg); color: var(--warn-ink); text-transform: uppercase; letter-spacing: .03em;
+  display: inline-block; font-size: 12px; font-weight: 600; padding: 0 6px; margin-left: 6px; vertical-align: 2px;
+  border: var(--hair) solid var(--ink); text-transform: uppercase; letter-spacing: .03em;
 }
-.badge.needs-source { background: var(--bad-bg); color: var(--bad-ink); }
+.badge.needs-source { background: var(--ink); color: var(--bg); }
 
 /* Recipe */
 .recipe h1 { font-size: 30px; line-height: 1.15; margin: 8px 0 8px; letter-spacing: -.01em; }
 .facts { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--muted); font-size: 15px; margin-bottom: 10px; }
 .facts a { color: var(--muted); }
 .tools { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
-.tools .btn { padding: 8px 14px; font-size: 15px; }
+.tools .btn { padding: 7px 12px; font-size: 15px; }
 .reason { margin: 10px 0; }
-.body h2 { font-size: 22px; margin: 28px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.body h2 { font-size: 22px; margin: 28px 0 8px; padding-bottom: 4px; border-bottom: var(--hair) solid var(--ink); scroll-margin-top: 8px; }
 .body h3 { font-size: 18px; margin: 18px 0 4px; color: var(--muted); }
 .body ul, .body ol { padding-left: 1.4em; }
 .body li { margin: 6px 0; }
-.body blockquote { margin: 12px 0; padding: 4px 14px; border-left: 3px solid var(--accent); color: var(--muted); }
+.body blockquote { margin: 12px 0; padding: 4px 14px; border-left: 2px solid var(--ink); color: var(--muted); }
 .body img { max-width: 100%; }
 .body li.check { cursor: pointer; -webkit-tap-highlight-color: transparent; padding: 4px 0; }
 .body li.check.done { color: var(--done); text-decoration: line-through; text-decoration-thickness: 1px; }
 .body ol li.check { margin: 10px 0; }
 .big .body { font-size: 22px; }
 .big .recipe h1 { font-size: 34px; }
+
+/* Fixed to the bottom of the frame, so each frame has its own. */
+.jump { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2; display: flex; background: var(--bg); }
+body.inactive .jump { display: none; }
+.jump button:active:not(:disabled) { background: var(--ink); color: var(--bg); }
 
 /* Swap facts */
 .facts-table { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; margin: 12px 0; }

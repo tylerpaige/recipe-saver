@@ -11,28 +11,30 @@ import { FRONTMATTER_RE, readRecipes, type SavedRecipe } from "./library.ts";
 import { pantry } from "./settings.ts";
 // The web app, bundled into the binary like the starter rulebook.
 import INDEX_HTML from "./web/index.html" with { type: "text" };
+import FRAME_HTML from "./web/frame.html" with { type: "text" };
+import SHELL_JS from "./web/shell.js" with { type: "text" };
 import APP_JS from "./web/app.js" with { type: "text" };
 import APP_CSS from "./web/app.css" with { type: "text" };
 import SW_JS from "./web/sw.js" with { type: "text" };
 import MANIFEST from "./web/manifest.webmanifest" with { type: "text" };
-import ICON_SVG from "./web/icon.svg" with { type: "text" };
-import ICON_PNG_B64 from "./web/icon-512.png.b64" with { type: "text" };
+import ICON_PNG_B64 from "./web/icon.png.b64" with { type: "text" };
 
 export const DEFAULT_PORT = 8787;
 
 // Changes whenever the app does, so phones drop their cached copy of the old one.
 const VERSION = encodeBase64(
-  await crypto.subtle.digest("SHA-1", new TextEncoder().encode(INDEX_HTML + APP_JS + APP_CSS + SW_JS + MANIFEST)),
+  await crypto.subtle.digest("SHA-1", new TextEncoder().encode(INDEX_HTML + FRAME_HTML + SHELL_JS + APP_JS + APP_CSS + SW_JS + MANIFEST + ICON_PNG_B64)),
 ).replace(/[^a-z0-9]/gi, "").slice(0, 10);
 
 const STATIC: Record<string, [string, BodyInit]> = {
   "/": ["text/html; charset=utf-8", INDEX_HTML],
+  "/frame": ["text/html; charset=utf-8", FRAME_HTML],
+  "/shell.js": ["text/javascript; charset=utf-8", SHELL_JS],
   "/app.js": ["text/javascript; charset=utf-8", APP_JS],
   "/app.css": ["text/css; charset=utf-8", APP_CSS],
   "/sw.js": ["text/javascript; charset=utf-8", SW_JS.replace("__VERSION__", VERSION)],
   "/manifest.webmanifest": ["application/manifest+json", MANIFEST],
-  "/icon.svg": ["image/svg+xml", ICON_SVG],
-  "/icon-512.png": ["image/png", decodeBase64(ICON_PNG_B64.trim())],
+  "/icon.png": ["image/png", decodeBase64(ICON_PNG_B64.trim())],
 };
 
 /** A recipe as the website shows it: the front-matter fields worth reading, and the body as HTML. */

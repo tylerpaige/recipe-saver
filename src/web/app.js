@@ -1,10 +1,22 @@
 // The kitchen website: your recipes (kept on the phone for offline use), cook and swap lookups (asked of the Mac).
-// Routes live in the URL hash: #/, #/r/<key>, #/cook?have=a&have=b, #/swap/<name>.
+// Routes live in the URL hash: #/?q=<search>, #/r/<key>, #/cook?have=a&have=b, #/swap/<name>.
+// It runs in a frame of the outer page (shell.js), which holds the nav bar; up to two frames run side by side.
 "use strict";
 
 const view = document.getElementById("view");
 const offline = document.getElementById("offline");
-const TAGS_SHOWN = 12;
+const framed = parent !== window;
+history.scrollRestoration = "manual";
+
+/** Tells the outer page where this frame is, for the nav and for reopening it there. */
+function report() {
+  if (framed) parent.postMessage({ type: "route", hash: location.hash || "#/" }, location.origin);
+}
+// Touching a frame makes it the one the nav drives. iOS Safari doesn't send pointerdown for every tap inside a frame,
+// so touchstart too, and focusin for a field reached without a tap.
+for (const type of ["touchstart", "pointerdown", "focusin"]) {
+  addEventListener(type, () => framed && parent.postMessage({ type: "focus" }, location.origin), { capture: true, passive: true });
+}
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const store = {
@@ -63,16 +75,17 @@ async function ask(path) {
 // ---- Recipes ----
 
 let query = "";
-let chosenTags = [];
-let allTagsShown = false;
 
 const plain = (html) => html.replace(/<[^>]+>/g, " ");
 const words = (s) => s.toLowerCase().split(/\s+/).filter(Boolean);
 
+/** Words match titles, tags and text; a #word only matches that tag. */
 function filtered() {
-  const q = words(query);
+  const all = words(query);
+  const tags = all.filter((w) => w.length > 1 && w.startsWith("#")).map((w) => w.slice(1));
+  const q = all.filter((w) => !w.startsWith("#"));
   return library.recipes
-    .filter((r) => chosenTags.every((t) => r.tags.includes(t)))
+    .filter((r) => tags.every((t) => r.tags.some((x) => x.toLowerCase() === t)))
     .map((r) => {
       const head = `${r.title} ${r.tags.join(" ")}`.toLowerCase();
       const all = `${head} ${plain(r.html).toLowerCase()}`;
@@ -84,20 +97,9 @@ function filtered() {
     .map((x) => x.r);
 }
 
-function tagCounts() {
-  const counts = new Map();
-  for (const r of library.recipes) for (const t of r.tags) counts.set(t, (counts.get(t) ?? 0) + 1);
-  return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-}
-
 function renderList() {
   const rows = filtered();
-  const tags = tagCounts();
-  const shown = allTagsShown ? tags : tags.slice(0, TAGS_SHOWN);
-  for (const t of chosenTags) if (!shown.some(([s]) => s === t)) shown.unshift([t, 0]);
-  const chips = shown.map(([t]) => `<button class="chip ${chosenTags.includes(t) ? "on" : ""}" data-tag="${esc(t)}">#${esc(t)}</button>`);
-  if (tags.length > TAGS_SHOWN) chips.push(`<button class="chip more" data-more>${allTagsShown ? "fewer" : `all ${tags.length} tags`}</button>`);
-  document.getElementById("chips").innerHTML = chips.join("");
+  document.getElementById("clear").disabled = !query;
   document.getElementById("rows").innerHTML = rows.length
     ? rows.map((r) => `<li><a href="#/r/${encodeURIComponent(r.key)}">
         <div class="title">${esc(r.title)}${badge(r.status)}</div>
@@ -108,25 +110,27 @@ function renderList() {
     `${rows.length} of ${library.recipes.length} recipe${library.recipes.length === 1 ? "" : "s"}`;
 }
 
-async function recipesView() {
+async function recipesView(params) {
+  // The search lives in the hash, so a split copies it; plain #/ (the nav button) keeps the last one.
+  if (params.has("q")) query = params.get("q");
+  const search = (q) => {
+    query = q;
+    history.replaceState(null, "", query ? `#/?q=${encodeURIComponent(query)}` : "#/");
+    report();
+    renderList();
+  };
   view.innerHTML = `
-    <div class="search"><input id="q" type="search" placeholder="Search titles, tags, ingredients…" autocomplete="off" value="${esc(query)}"></div>
-    <div id="chips" class="chips"></div>
+    <div class="search">
+      <input id="q" type="search" placeholder="Search titles, #tags, ingredients…" autocomplete="off" autocapitalize="none" value="${esc(query)}">
+      <button id="clear" class="btn" type="button">Clear</button>
+    </div>
     <p id="count" class="muted small" style="margin:0 0 4px"></p>
     <ul id="rows" class="list"><li class="muted" style="padding:14px 2px">Loading…</li></ul>`;
   await ensureLibrary();
-  renderList();
-  document.getElementById("q").addEventListener("input", (e) => { query = e.target.value; renderList(); });
-  document.getElementById("chips").addEventListener("click", (e) => {
-    const b = e.target.closest("button");
-    if (!b) return;
-    if (b.hasAttribute("data-more")) allTagsShown = !allTagsShown;
-    else {
-      const t = b.dataset.tag;
-      chosenTags = chosenTags.includes(t) ? chosenTags.filter((x) => x !== t) : [...chosenTags, t];
-    }
-    renderList();
-  });
+  search(query);
+  const input = document.getElementById("q");
+  input.addEventListener("input", () => search(input.value));
+  document.getElementById("clear").addEventListener("click", () => { input.value = ""; search(""); });
 }
 
 async function ensureLibrary() {
@@ -185,6 +189,50 @@ function checkable(body, key) {
   };
 }
 
+/**
+ * The footer: jump to Ingredients or Steps, and Return to where you were. Return swaps places with the remembered
+ * spot, so it flips between a step and its ingredient. Leaving the recipe remembers where you were reading.
+ */
+function jumpBar(body, key) {
+  const heads = [...body.querySelectorAll("h2")];
+  const targets = {
+    ingredients: heads.find((h) => /ingredient/i.test(h.textContent)),
+    steps: heads.find((h) => /step|method|instruction|direction/i.test(h.textContent)),
+  };
+  const bar = view.querySelector(".jump");
+  const back = bar.querySelector('[data-jump="back"]');
+  let mark = store.get(`mark:${key}`, null);
+  let jumpedTo = null; // where the last jump landed; a second jump from there keeps the first mark
+  const remember = (y) => {
+    mark = y;
+    store.set(`mark:${key}`, mark);
+    back.disabled = mark === null;
+  };
+  for (const [name, h] of Object.entries(targets)) bar.querySelector(`[data-jump="${name}"]`).disabled = !h;
+  back.disabled = mark === null;
+  bar.addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    const here = scrollY;
+    if (b.dataset.jump === "back") {
+      if (mark === null) return;
+      scrollTo(0, mark);
+      remember(here);
+      jumpedTo = null;
+    } else {
+      if (jumpedTo === null || Math.abs(here - jumpedTo) > 2) remember(here);
+      targets[b.dataset.jump].scrollIntoView();
+      jumpedTo = scrollY;
+    }
+  });
+  return () => {
+    if (scrollY > 40 && (jumpedTo === null || Math.abs(scrollY - jumpedTo) > 2)) remember(scrollY);
+  };
+}
+
+let leaveRecipe = null;
+addEventListener("pagehide", () => leaveRecipe?.());
+
 async function recipeView(key) {
   await ensureLibrary();
   const r = library.recipes.find((x) => x.key === key);
@@ -208,15 +256,22 @@ async function recipeView(key) {
       <h1>${esc(r.title)}${badge(r.status)}</h1>
       ${facts.length ? `<div class="facts">${facts.join("")}</div>` : ""}
       ${r.status_reason ? `<p class="reason error small">${esc(r.status_reason)}</p>` : ""}
-      ${r.tags.length ? `<div class="chips">${r.tags.map((t) => `<a class="chip" href="#/" data-tag="${esc(t)}">#${esc(t)}</a>`).join("")}</div>` : ""}
+      ${r.tags.length ? `<div class="facts">${r.tags.map((t) => `<a href="#/?q=${encodeURIComponent("#" + t)}">#${esc(t)}</a>`).join("")}</div>` : ""}
       <div class="tools">
         <button class="btn quiet" id="size">${big ? "Smaller text" : "Bigger text"}</button>
         <button class="btn quiet" id="reset">Uncross all</button>
       </div>
       <p class="muted small" style="margin:6px 0 0">Tap an ingredient or step to cross it off.${"wakeLock" in navigator ? " The screen stays on while a recipe is open." : ""}</p>
       <div class="body">${r.html}</div>
+      <nav class="jump">
+        <button data-jump="ingredients">Ingredients</button>
+        <button data-jump="steps">Steps</button>
+        <button data-jump="back">Return</button>
+      </nav>
     </article>`;
-  const reset = checkable(view.querySelector(".body"), key);
+  const body = view.querySelector(".body");
+  const reset = checkable(body, key);
+  leaveRecipe = jumpBar(body, key);
   document.getElementById("reset").addEventListener("click", reset);
   document.getElementById("size").addEventListener("click", (e) => {
     const now = !document.body.classList.contains("big");
@@ -224,9 +279,6 @@ async function recipeView(key) {
     store.set("big", now);
     e.target.textContent = now ? "Smaller text" : "Bigger text";
   });
-  view.querySelectorAll(".chips a[data-tag]").forEach((a) =>
-    a.addEventListener("click", () => { chosenTags = [a.dataset.tag]; query = ""; })
-  );
   keepAwake(true);
   scrollTo(0, 0);
 }
@@ -268,6 +320,7 @@ async function cookView(params) {
   const search = () => {
     const hash = have.length ? `#/cook?${have.map((h) => `have=${encodeURIComponent(h)}`).join("&")}` : "#/cook";
     history.replaceState(null, "", hash);
+    report();
     runCook(have);
   };
   document.getElementById("add").addEventListener("submit", (e) => {
@@ -371,15 +424,25 @@ async function runSwap(name) {
   }
 }
 
+// ---- Refresh, at the bottom of every page: a home-screen app has no reload button ----
+
+document.getElementById("refresh").addEventListener("click", (e) => {
+  e.target.disabled = true;
+  e.target.textContent = "Refreshing…";
+  // The whole app reloads, from the outer page, so every frame comes back as it was.
+  if (framed) parent.postMessage({ type: "refresh" }, location.origin);
+  else location.reload();
+});
+
 // ---- Routing ----
 
 async function route() {
   const hash = location.hash.slice(1) || "/";
   const [path, qs = ""] = hash.split("?");
   const parts = path.split("/").filter(Boolean).map(decodeURIComponent);
-  const section = parts[0] === "r" || !parts[0] ? "recipes" : parts[0];
-  document.querySelectorAll("[data-nav]").forEach((a) => a.classList.toggle("on", a.dataset.nav === section));
-  document.title = "Recipes";
+  leaveRecipe?.();
+  leaveRecipe = null;
+  document.title = { cook: "Cook", swap: parts[1] ? `Swaps: ${parts[1]}` : "Swaps" }[parts[0]] ?? "Recipes";
   if (parts[0] !== "r") {
     keepAwake(false);
     document.body.classList.remove("big");
@@ -388,12 +451,17 @@ async function route() {
     if (parts[0] === "r" && parts[1]) await recipeView(parts[1]);
     else if (parts[0] === "cook") await cookView(new URLSearchParams(qs));
     else if (parts[0] === "swap") await swapView(parts[1] ?? "");
-    else await recipesView();
+    else await recipesView(new URLSearchParams(qs));
   } catch { /* already shown on the page */ }
+  report();
 }
 
-addEventListener("hashchange", route);
+// Moving to another page (a link, a tab, Back) gives the frame new colours; the outer page picks them.
+addEventListener("hashchange", () => {
+  if (framed) parent.postMessage({ type: "navigated" }, location.origin);
+  else document.documentElement.dataset.palette = String((Number(document.documentElement.dataset.palette) + 1 + Math.floor(Math.random() * 3)) % 4);
+  route();
+});
 route();
 // Fetch the library in the background too, so the phone has every recipe saved before you need it offline.
 if (!library) loadLibrary().catch(() => {});
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});

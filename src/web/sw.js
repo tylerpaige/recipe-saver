@@ -1,7 +1,7 @@
 // Keeps the app and your recipes on the phone, so they open when the Mac is asleep or the Wi-Fi is bad.
 // Cook and swap lookups need the Mac, so they're never cached.
 const VERSION = "__VERSION__";
-const SHELL = ["/", "/app.js", "/app.css", "/manifest.webmanifest", "/icon.svg", "/icon-512.png"];
+const SHELL = ["/", "/frame", "/shell.js", "/app.js", "/app.css", "/manifest.webmanifest", "/icon.png"];
 const SHELL_CACHE = `shell-${VERSION}`;
 const DATA_CACHE = "data";
 // How long to wait for the Mac before showing the saved copy. Tailscale to a sleeping Mac can hang for a while.
@@ -41,6 +41,6 @@ self.addEventListener("fetch", (e) => {
   if (url.pathname === "/api/library") return e.respondWith(library(e.request));
   if (url.pathname.startsWith("/api/")) return; // live only
   // The app itself: the cached copy, which a new version replaces.
-  const path = e.request.mode === "navigate" ? "/" : url.pathname;
+  const path = e.request.mode === "navigate" && url.pathname !== "/frame" ? "/" : url.pathname;
   e.respondWith(caches.match(path).then((hit) => hit ?? fetch(e.request)));
 });

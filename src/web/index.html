@@ -4,26 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Recipes</title>
-  <meta name="theme-color" content="#f7f3ec" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#1c1a17" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#000000">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="Recipes">
   <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="icon" href="/icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="/icon-512.png">
+  <link rel="icon" href="/icon.png" type="image/png">
+  <link rel="apple-touch-icon" href="/icon.png">
   <link rel="stylesheet" href="/app.css">
 </head>
-<body>
-  <header class="bar">
-    <nav>
-      <a href="#/" data-nav="recipes">Recipes</a>
-      <a href="#/cook" data-nav="cook">Cook</a>
-      <a href="#/swap" data-nav="swap">Swaps</a>
-    </nav>
-  </header>
-  <div id="offline" class="offline" hidden></div>
-  <main id="view"></main>
-  <script src="/app.js"></script>
+<body class="shell">
+  <div id="frames" class="frames"></div>
+  <script src="/shell.js"></script>
 </body>
 </html>

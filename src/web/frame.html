@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recipes</title>
+  <link rel="stylesheet" href="/app.css">
+  <!-- The colours the outer page picked for this frame (shell.js), set before anything is drawn. Opened on its own,
+       it picks one of the 4 itself. -->
+  <script>document.documentElement.dataset.palette = window.frameElement?.dataset.palette ?? String(Math.floor(Math.random() * 4));</script>
+</head>
+<body class="frame">
+  <div id="offline" class="offline" hidden></div>
+  <main id="view"></main>
+  <footer class="foot"><button id="refresh" class="btn" type="button">Refresh</button></footer>
+  <script src="/app.js"></script>
+</body>
+</html>
