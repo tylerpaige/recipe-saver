@@ -255,7 +255,10 @@ body.shell {
 
 /* Each frame gets a border in its ink colour; the one you're not using goes grey, border and all. */
 .frames.split .pane {
-  border: 5px solid var(--ink);
+  /* border: 5px solid var(--ink); */
+  border-color: var(--ink);
+  border-style: solid;
+  border-width: 0px;
 }
 .frames.split .pane:first-of-type {
   flex-grow: var(--split);
@@ -263,6 +266,23 @@ body.shell {
 .frames.split .pane:last-of-type {
   flex-grow: calc(1 - var(--split));
 }
+@media (orientation: landscape) {
+  .frames.split .pane:first-of-type {
+    border-right-width: 5px;
+  }
+  .frames.split .pane:last-of-type {
+    border-left-width: 5px;
+  }
+}
+@media (orientation: portrait) {
+  .frames.split .pane:first-of-type {
+    border-bottom-width: 5px;
+  }
+  .frames.split .pane:last-of-type {
+    border-top-width: 5px;
+  }
+}
+
 /* The frame you're not using goes grey, so the colourful one is the one the nav drives. */
 .frames.split .pane:not(.on) {
   filter: grayscale(1);
@@ -454,7 +474,7 @@ body:not(.inactive):has(.jump) .foot {
 .facts {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 16px;
+  gap: 3px 12px;
   color: var(--muted);
   font-size: 15px;
   margin-bottom: 10px;
@@ -466,7 +486,7 @@ body:not(.inactive):has(.jump) .foot {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 12px 0 4px;
+  margin: 24px 0 4px;
 }
 .tools .btn {
   padding: 7px 12px;
