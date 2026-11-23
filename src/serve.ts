@@ -1,5 +1,6 @@
 // `recipe-saver serve`: the kitchen website. Reads the Recipes folder on every request (so iA Writer edits show up at
-// once) and answers `cook` and `ingredient swap` with the same code as the CLI. Writes nothing the CLI wouldn't.
+// once) and answers `cook` and `ingredient swap` with the same code as the CLI. The only thing it writes to a recipe is
+// your note and #favorite, sent from the recipe page (the phone queues them while the Mac is away).
 // Listens on localhost only; `tailscale serve` puts it on HTTPS for your own devices (see README).
 import { basename } from "@std/path";
 import { encodeBase64, decodeBase64 } from "@std/encoding";
@@ -7,7 +8,7 @@ import { marked } from "marked";
 import { parse } from "yaml";
 import { SystemicError, TransientError } from "./errors.ts";
 import { ingredientNames, standIns, whatToCook } from "./ingredients.ts";
-import { FRONTMATTER_RE, readRecipes, type SavedRecipe } from "./library.ts";
+import { readRecipes, type SavedRecipe, splitRecipe, withFavorite, withNote } from "./library.ts";
 import { pantry } from "./settings.ts";
 // The web app, bundled into the binary like the starter rulebook.
 import INDEX_HTML from "./web/index.html" with { type: "text" };
@@ -52,6 +53,7 @@ interface WebRecipe {
   cook_time?: string;
   source?: string;
   recipe_url?: string;
+  note: string; // your note, the blockquote under the title; not in `html`, so the page can show and edit it
   html: string;
 }
 
@@ -59,14 +61,13 @@ const keyOf = (r: SavedRecipe) => r.id || basename(r.file, ".md");
 
 async function webRecipe(r: SavedRecipe): Promise<WebRecipe> {
   const text = await Deno.readTextFile(r.file);
-  const match = text.match(FRONTMATTER_RE);
+  // The page shows the title and note itself, so the body is what follows them.
+  const { frontmatter, note, body } = splitRecipe(text);
   // deno-lint-ignore no-explicit-any
   let fm: any = {};
   try {
-    fm = parse(match?.[1] ?? "") ?? {};
+    fm = parse(frontmatter.slice(4, -4)) ?? {};
   } catch { /* hand-edited front-matter that no longer parses; show the body anyway */ }
-  // The page shows the title itself, so drop the body's own "# Title".
-  const body = text.slice(match?.[0].length ?? 0).replace(/^\s*# [^\n]*\n/, "");
   const field = (k: string) => (fm[k] === undefined || fm[k] === null ? undefined : String(fm[k]));
   return {
     key: keyOf(r),
@@ -80,11 +81,12 @@ async function webRecipe(r: SavedRecipe): Promise<WebRecipe> {
     cook_time: field("cook_time"),
     source: field("source"),
     recipe_url: field("recipe_url"),
+    note,
     html: await marked.parse(body),
   };
 }
 
-// cook and swap can ask Claude and save the rulebook and ingredient cache, so one at a time.
+// cook and swap can ask Claude and save the rulebook and ingredient cache, and edits rewrite a recipe: one at a time.
 let queue: Promise<unknown> = Promise.resolve();
 function oneAtATime<T>(fn: () => Promise<T>): Promise<T> {
   const next = queue.then(fn, fn);
@@ -97,7 +99,7 @@ const json = (body: unknown, status = 200) =>
 
 const recipeRef = (r: SavedRecipe) => ({ key: keyOf(r), title: r.title, status: r.status });
 
-async function api(url: URL): Promise<Response> {
+async function api(req: Request, url: URL): Promise<Response> {
   const notes: string[] = [];
   const say = (msg: string) => notes.push(msg.trim());
   switch (url.pathname) {
@@ -127,17 +129,35 @@ async function api(url: URL): Promise<Response> {
         info: { ...info, recipes: info.recipes.map(recipeRef), swapRecipes: info.swapRecipes.map(recipeRef) },
       });
     }
+    case "/api/edit": {
+      // Either or both: { key, favorite: true/false, note: "text" }. Setting, not toggling, so a resend is harmless.
+      const { key, favorite, note } = await req.json().catch(() => ({}));
+      if (typeof key !== "string") return json({ error: "Say which recipe." }, 400);
+      await oneAtATime(async () => {
+        const r = (await readRecipes()).find((r) => keyOf(r) === key);
+        if (!r) throw new Gone();
+        const before = await Deno.readTextFile(r.file);
+        let text = before;
+        if (typeof favorite === "boolean") text = withFavorite(text, favorite);
+        if (typeof note === "string") text = withNote(text, note);
+        if (text !== before) await Deno.writeTextFile(r.file, text);
+      });
+      return json({ ok: true });
+    }
   }
   return json({ error: "Not found" }, 404);
 }
 
+class Gone extends Error {}
+
 async function handle(req: Request): Promise<Response> {
   const url = new URL(req.url);
-  if (req.method !== "GET") return new Response("Read-only", { status: 405 });
+  if (req.method !== (url.pathname === "/api/edit" ? "POST" : "GET")) return new Response("Wrong method", { status: 405 });
   if (url.pathname.startsWith("/api/")) {
     try {
-      return await api(url);
+      return await api(req, url);
     } catch (e) {
+      if (e instanceof Gone) return json({ error: "That recipe isn't in your library any more." }, 404);
       // No API key, Claude unreachable: say so on the page, as the CLI would in the terminal.
       if (e instanceof SystemicError || e instanceof TransientError) return json({ error: e.message }, 503);
       console.error(e);

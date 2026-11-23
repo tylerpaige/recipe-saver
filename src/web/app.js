@@ -1,4 +1,5 @@
 // The kitchen website: your recipes (kept on the phone for offline use), cook and swap lookups (asked of the Mac).
+// Your note and favorite are saved on the phone first and sent to the Mac when it answers.
 // Routes live in the URL hash: #/?q=<search>, #/r/<key>, #/cook?have=a&have=b, #/swap/<name>.
 // It runs in a frame of the outer page (shell.js), which holds the nav bar; up to two frames run side by side.
 "use strict";
@@ -48,7 +49,10 @@ function loadLibrary() {
   loading ??= fetch("/api/library").then(async (res) => {
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `The Mac answered ${res.status}`);
     library = await res.json();
-    showOffline(res.headers.get("x-saved-copy") ? `Can't reach your Mac. Showing recipes as of ${new Date(library.at).toLocaleString()}.` : "");
+    applyEdits();
+    const saved = res.headers.get("x-saved-copy");
+    showOffline(saved ? `Can't reach your Mac. Showing recipes as of ${new Date(library.at).toLocaleString()}.` : "");
+    if (!saved) sync();
     return library;
   }).finally(() => { loading = null; });
   return loading;
@@ -58,6 +62,78 @@ function showOffline(msg) {
   offline.hidden = !msg;
   offline.textContent = msg;
 }
+
+// ---- Your edits (note, favorite): kept on the phone as { key: { note?, favorite? } } until the Mac has them ----
+
+const pendingEdits = () => store.get("pending", {});
+
+/** Saves an edit on the phone, shows it, and sends it when the Mac can be reached. */
+function edit(key, change) {
+  const all = pendingEdits();
+  all[key] = { ...all[key], ...change };
+  store.set("pending", all);
+  applyEdits();
+  sync();
+}
+
+/** Puts edits the Mac doesn't have yet on top of the library, which may be the Mac's or the saved copy. */
+function applyEdits() {
+  if (!library) return;
+  for (const [key, p] of Object.entries(pendingEdits())) {
+    const r = library.recipes.find((x) => x.key === key);
+    if (!r) continue;
+    if (p.note !== undefined) r.note = p.note;
+    if (p.favorite !== undefined) r.tags = [...r.tags.filter((t) => t !== "favorite"), ...(p.favorite ? ["favorite"] : [])];
+  }
+}
+
+let syncing = false;
+let syncAgain = false;
+let redraw = null; // the open recipe's, to update "waiting for your Mac"
+
+/** Sends queued edits. Stops at the first the Mac doesn't answer; the rest wait for the next try. */
+async function sync() {
+  if (syncing) return void (syncAgain = true);
+  syncing = true;
+  let sent = false;
+  try {
+    for (const [key, change] of Object.entries(pendingEdits())) {
+      let res;
+      try {
+        res = await fetch("/api/edit", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ key, ...change }),
+          signal: AbortSignal.timeout(10000), // a sleeping Mac can leave it hanging
+        });
+      } catch {
+        break;
+      }
+      if (res.status >= 500) break;
+      // Saved, or refused for good (the recipe's gone): stop sending it, unless you changed it again meanwhile.
+      const now = pendingEdits();
+      if (JSON.stringify(now[key]) === JSON.stringify(change)) {
+        delete now[key];
+        store.set("pending", now);
+      }
+      sent = true;
+    }
+    // Fetch the library again, so the copy kept for offline has the edits too.
+    if (sent) {
+      loading = null;
+      await loadLibrary().catch(() => {});
+    }
+  } finally {
+    syncing = false;
+    redraw?.();
+    if (syncAgain) {
+      syncAgain = false;
+      sync();
+    }
+  }
+}
+addEventListener("online", sync);
+document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && sync());
 
 /** Asks the Mac a live question (cook, swap). Throws a readable message when it can't. */
 async function ask(path) {
@@ -88,7 +164,7 @@ function filtered() {
     .filter((r) => tags.every((t) => r.tags.some((x) => x.toLowerCase() === t)))
     .map((r) => {
       const head = `${r.title} ${r.tags.join(" ")}`.toLowerCase();
-      const all = `${head} ${plain(r.html).toLowerCase()}`;
+      const all = `${head} ${(r.note ?? "").toLowerCase()} ${plain(r.html).toLowerCase()}`;
       // Title and tag matches first, then recipes that only mention it in the text.
       return { r, rank: q.every((w) => head.includes(w)) ? 0 : q.every((w) => all.includes(w)) ? 1 : -1 };
     })
@@ -256,12 +332,22 @@ async function recipeView(key) {
       <h1>${esc(r.title)}${badge(r.status)}</h1>
       ${facts.length ? `<div class="facts">${facts.join("")}</div>` : ""}
       ${r.status_reason ? `<p class="reason error small">${esc(r.status_reason)}</p>` : ""}
-      ${r.tags.length ? `<div class="facts">${r.tags.map((t) => `<a href="#/?q=${encodeURIComponent("#" + t)}">#${esc(t)}</a>`).join("")}</div>` : ""}
+      <div class="facts" id="tags"></div>
       <div class="tools">
+        <button class="btn quiet" id="fav"></button>
+        <button class="btn quiet" id="note-edit"></button>
         <button class="btn quiet" id="size">${big ? "Smaller text" : "Bigger text"}</button>
         <button class="btn quiet" id="reset">Reset all markings</button>
       </div>
-      <div class="body">${r.html}</div>
+      <form id="note-form" class="note-form" hidden>
+        <textarea class="field" rows="4" placeholder="What you changed, what to try next time…"></textarea>
+        <div class="tools">
+          <button class="btn">Save note</button>
+          <button class="btn quiet" type="button" id="note-cancel">Cancel</button>
+        </div>
+      </form>
+      <p class="muted small" id="waiting" hidden>Saved on this phone. It goes to your Mac when it's reachable.</p>
+      <div class="body"><blockquote class="note" hidden></blockquote>${r.html}</div>
       <nav class="jump">
         <button data-jump="ingredients">Ingredients</button>
         <button data-jump="steps">Steps</button>
@@ -272,6 +358,45 @@ async function recipeView(key) {
   const reset = checkable(body, key);
   leaveRecipe = jumpBar(body, key);
   document.getElementById("reset").addEventListener("click", reset);
+
+  // Favorite and note: drawn from the library, which has your unsent edits on top (applyEdits).
+  const favButton = document.getElementById("fav");
+  const noteButton = document.getElementById("note-edit");
+  const noteForm = document.getElementById("note-form");
+  const textarea = noteForm.querySelector("textarea");
+  const current = () => library.recipes.find((x) => x.key === key) ?? r; // the library is replaced after a sync
+  redraw = () => {
+    const { tags, note = "" } = current();
+    const fav = tags.includes("favorite");
+    favButton.classList.toggle("on", fav);
+    favButton.textContent = fav ? "★ Favorite" : "☆ Favorite";
+    noteButton.textContent = note ? "Edit note" : "Add note";
+    const tagRow = document.getElementById("tags");
+    tagRow.hidden = !tags.length;
+    tagRow.innerHTML = tags.map((t) => `<a href="#/?q=${encodeURIComponent("#" + t)}">#${esc(t)}</a>`).join("");
+    const quote = view.querySelector("blockquote.note");
+    quote.hidden = !note;
+    quote.textContent = note;
+    document.getElementById("waiting").hidden = !(key in pendingEdits());
+  };
+  redraw();
+  favButton.addEventListener("click", () => {
+    edit(key, { favorite: !current().tags.includes("favorite") });
+    redraw();
+  });
+  noteButton.addEventListener("click", () => {
+    textarea.value = current().note ?? "";
+    noteForm.hidden = false;
+    textarea.focus();
+  });
+  document.getElementById("note-cancel").addEventListener("click", () => { noteForm.hidden = true; });
+  noteForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    edit(key, { note: textarea.value.trim() });
+    noteForm.hidden = true;
+    redraw();
+  });
+
   document.getElementById("size").addEventListener("click", (e) => {
     const now = !document.body.classList.contains("big");
     document.body.classList.toggle("big", now);
@@ -441,6 +566,7 @@ async function route() {
   const parts = path.split("/").filter(Boolean).map(decodeURIComponent);
   leaveRecipe?.();
   leaveRecipe = null;
+  redraw = null;
   document.title = { cook: "Cook", swap: parts[1] ? `Swaps: ${parts[1]}` : "Swaps" }[parts[0]] ?? "Recipes";
   if (parts[0] !== "r") {
     keepAwake(false);

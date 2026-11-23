@@ -601,3 +601,21 @@ h2.section {
     font-size: 38px;
   }
 }
+
+/* Your note: the form on the recipe page, and the note itself at the top of the body. */
+.note-form textarea {
+  display: block;
+  width: 100%;
+  color: var(--ink);
+  font: inherit;
+  resize: vertical;
+}
+.note-form .tools {
+  margin-top: 8px;
+}
+.body blockquote.note {
+  white-space: pre-wrap;
+}
+.facts[hidden] {
+  display: none;
+}
